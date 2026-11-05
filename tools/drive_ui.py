@@ -103,6 +103,7 @@ def tap_field_below(label_prefix, timeout=12):
                 tap((e['b'][0] + e['b'][2]) // 2, (e['b'][1] + e['b'][3]) // 2)
                 print('tapped field below', label_prefix); sys.stdout.flush()
                 return True
+        dismiss_anr()
         swipe_up()
     print('MISS field below', label_prefix); sys.stdout.flush()
     return False
@@ -114,11 +115,23 @@ def dismiss_keyboard():
     adb('shell', 'input', 'keyevent', '4')
     time.sleep(1)
 
+def dismiss_anr():
+    # Emulator system ANR dialog ("<app> isn't responding") steals all input.
+    # Always choose Wait - "Close app" would kill the foreground app.
+    xml = dump()
+    if 'responding' in xml and 'Wait' in xml:
+        if tap_text('Wait', timeout=3, exact=True):
+            print('dismissed ANR dialog via Wait'); sys.stdout.flush()
+            time.sleep(2)
+            return True
+    return False
+
 def tap_nav(label, timeout=12):
-    # Bottom-nav tap that survives an open keyboard.
+    # Bottom-nav tap that survives an open keyboard and ANR dialogs.
     if tap_text(label, timeout=3, exact=True):
         return True
     dismiss_keyboard()
+    dismiss_anr()
     return tap_text(label, timeout=timeout, exact=True)
 
 def assert_text(t, xml):
@@ -131,6 +144,10 @@ adb('shell', 'pm', 'grant', PKG, 'android.permission.CAMERA')
 adb('shell', 'am', 'force-stop', PKG)
 adb('shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1')
 time.sleep(14)
+for _ in range(8):
+    if not dismiss_anr():
+        break
+    time.sleep(3)
 
 if BACKEND_TEST:
     # Configure the secure backend via the real Settings UI (token arrives via
@@ -168,7 +185,7 @@ time.sleep(2)
 shot('03-panel-ai-status')
 xml = dump()
 assert_text('Provider', xml)
-tap_text('Close')
+tap_text('Close', exact=True)
 time.sleep(1)
 
 # Chat: send a message; with no key configured the app must show the honest setup card
