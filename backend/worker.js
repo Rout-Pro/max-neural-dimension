@@ -79,6 +79,16 @@ async function handleChat(request, env) {
   }
 }
 
+// Parse Retry-After: delta-seconds or HTTP-date. null = absent/unparsable.
+function retryAfterMs(h) {
+  if (!h) return null;
+  const secs = Number(h);
+  if (Number.isFinite(secs) && h.trim() !== "") return Math.max(secs, 0) * 1000;
+  const t = Date.parse(h);
+  if (Number.isFinite(t)) return Math.max(t - Date.now(), 0);
+  return null;
+}
+
 async function chatGemini(env, messages, mode, system) {
   if (!env.GEMINI_API_KEY) return json({ error: "GEMINI_API_KEY not set on backend" }, 500);
   const model = mode === "thinking"
@@ -112,11 +122,18 @@ async function chatGemini(env, messages, mode, system) {
     if (!transient || attempt === 2) {
       return json({ error: `gemini ${upstream.status}: ${detail.slice(0, 300)}` }, 502);
     }
-    // Honor provider Retry-After when present (capped 8s); else bounded backoff.
-    const ra = parseFloat(upstream.headers.get("retry-after") || "");
-    const waitMs = Number.isFinite(ra) && ra > 0
-      ? Math.min(ra * 1000, 8000)
-      : 2000 * (attempt + 1);
+    // Honor provider Retry-After (seconds or HTTP-date). If it exceeds the
+    // request latency budget, do NOT retry early - return a clear retry-later
+    // error. Unparsable header: fail conservatively rather than guess.
+    const raHeader = upstream.headers.get("retry-after");
+    const raMs = retryAfterMs(raHeader);
+    if (raHeader && raMs === null) {
+      return json({ error: `gemini ${upstream.status}: ${detail.slice(0, 300)}` }, 502);
+    }
+    if (raMs !== null && raMs > 8000) {
+      return json({ error: `gemini ${upstream.status}: provider asked to retry later (Retry-After: ${raHeader})` }, 502);
+    }
+    const waitMs = raMs !== null ? Math.max(raMs, 500) : 2000 * (attempt + 1);
     await new Promise((r) => setTimeout(r, waitMs));
   }
   if (!upstream || !upstream.ok || !upstream.body) {
