@@ -168,23 +168,27 @@ elif MODE == 'verify':
         shot('upgraded-settings')
     else:
         results['settings_url_persisted'] = False
-    # 2. active conversation shows the seeded message
-    if tap_text('Chat', exact=True):
-        results['message_visible'] = poll_text(SEED_MSG, 40)
-    else:
-        results['message_visible'] = False
+    # 2. Chat tab: Phase 1 does not restore the active conversation on cold
+    # start (currentConversationId is in-memory only), so an empty Chat here is
+    # expected. History persistence = conversation in picker + messages render.
+    tap_text('Chat', exact=True)
+    time.sleep(2)
+    results['cold_start_active_empty'] = not poll_text(SEED_MSG, 5)
     shot('upgraded-chat')
-    # 3. triage: does the conversation still exist in the picker at all?
-    results['conversation_in_picker'] = None
-    if not results['message_visible']:
-        if tap_text('New conversation', timeout=6) or tap_text('Conversations', timeout=6):
-            time.sleep(2)
-            results['conversation_in_picker'] = 'Hardening seed message' in dump()
-            shot('upgraded-picker')
+    results['conversation_in_picker'] = False
+    results['message_rendered_after_select'] = False
+    if tap_text('Conversations', timeout=8):
+        time.sleep(2)
+        xml = dump()
+        results['conversation_in_picker'] = 'Hardening seed message' in xml
+        shot('upgraded-picker')
+        if results['conversation_in_picker'] and tap_text('Hardening seed message', timeout=6):
+            results['message_rendered_after_select'] = poll_text(SEED_MSG, 20)
+            shot('upgraded-conversation-open')
     for k, v in results.items():
         print('UPGRADE-CHECK %s=%s' % (k, v))
     sys.stdout.flush()
-    if results['settings_url_persisted'] and results['message_visible']:
+    if results['settings_url_persisted'] and results['conversation_in_picker'] and results['message_rendered_after_select']:
         print('UPGRADE VERIFY PASS'); sys.stdout.flush()
     else:
         print('UPGRADE VERIFY FAIL'); sys.stdout.flush()
