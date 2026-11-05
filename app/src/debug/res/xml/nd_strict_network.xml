@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Default strict posture: no cleartext anywhere (targetSdk default). -->
+<network-security-config />

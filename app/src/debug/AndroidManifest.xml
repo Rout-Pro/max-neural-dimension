@@ -2,5 +2,5 @@
     <!-- Debug-only: let the CI emulator reach the mock backend on the host
          (10.0.2.2 / 127.0.0.1) over plain HTTP. Release manifest keeps
          usesCleartextTraffic="false" and ships no networkSecurityConfig. -->
-    <application android:networkSecurityConfig="@xml/nd_debug_network" />
+    <application android:networkSecurityConfig="${netSec}" />
 </manifest>

@@ -17,6 +17,14 @@ jobs:
           java-version: '17'
       - name: Assemble debug APK
         run: bash gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify distributed APK stays HTTPS-only and test-hook-free
+        run: |
+          AAPT=$(ls "$ANDROID_HOME/build-tools/"*/aapt | head -1)
+          if "$AAPT" list -a app/build/outputs/apk/debug/app-debug.apk | grep -q "nd_debug_network"; then
+            echo "::error::cleartext mock config leaked into the distributed APK"; exit 1
+          fi
+          "$AAPT" list -a app/build/outputs/apk/debug/app-debug.apk | grep "xml/nd_" || true
+          echo "OK: no cleartext mock config in distributed APK"
       - name: Sign APK (persistent key)
         env:
           ND_KEYSTORE_BASE64: ${{ secrets.ND_KEYSTORE_BASE64 }}
