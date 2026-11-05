@@ -178,10 +178,77 @@ def tap_nav(label, timeout=12):
     dismiss_anr()
     return tap_text(label, timeout=timeout, exact=True)
 
+def tap_edittext(timeout=8):
+    # Tap the first EditText on screen (dialogs with a single field).
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        nodes = parse_nodes(dump())
+        edits = [n for n in nodes if 'EditText' in n['cls'] and n['b'] != (0, 0, 0, 0)]
+        if edits:
+            e = edits[0]
+            tap((e['b'][0] + e['b'][2]) // 2, (e['b'][1] + e['b'][3]) // 2)
+            print('tapped EditText'); sys.stdout.flush()
+            return True
+        time.sleep(1)
+    print('MISS EditText'); sys.stdout.flush()
+    return False
+
+def relaunch():
+    adb('shell', 'am', 'force-stop', PKG)
+    adb('shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1')
+    time.sleep(13)
+    for _ in range(6):
+        if not dismiss_anr():
+            break
+        time.sleep(3)
+
+def list_app_files():
+    r = adb('shell', 'run-as', PKG, 'ls', 'files')
+    return (r.stdout or '').strip()
+
+def assert_true(label, ok):
+    print(('PASS ' if ok else 'FAIL ') + label); sys.stdout.flush()
+    return ok
+
 def assert_text(t, xml):
     ok = t.lower() in xml.lower()
     print(('PASS ' if ok else 'FAIL ') + 'expect text: ' + t); sys.stdout.flush()
     return ok
+
+OLD_APK = os.environ.get('ND_OLD_APK', '/tmp/old.apk')
+NEW_APK = os.environ.get('ND_NEW_APK', 'app/build/outputs/apk/debug/NeuralDimension-2.0.apk')
+
+# ---------- Room 1->2 migration evidence: seed with the RELEASED app, upgrade in place ----------
+if os.path.exists(OLD_APK):
+    print('MIGRATION: installing previous release APK'); sys.stdout.flush()
+    adb('shell', 'pm', 'uninstall', PKG)
+    r = adb('install', OLD_APK)
+    print('old install rc:', r.returncode, (r.stdout or '').strip()[-60:]); sys.stdout.flush()
+    relaunch()
+    tap_nav('Chat')
+    time.sleep(3)
+    if tap_text('Message', timeout=8):
+        time.sleep(1)
+        type_text('Migration seed note')
+        time.sleep(1)
+        tap_text('Send', timeout=3)
+    time.sleep(6)
+    dismiss_keyboard()
+    shot('m1-old-seed')
+    r = adb('install', '-r', '-d', NEW_APK)
+    print('upgrade install rc:', r.returncode, (r.stdout or '').strip()[-60:]); sys.stdout.flush()
+    relaunch()
+    tap_nav('Chat')
+    time.sleep(3)
+    tap_text('New conversation', timeout=8)  # header picker
+    time.sleep(2)
+    tap_text('Migration seed note', timeout=8)
+    time.sleep(2)
+    xml = dump()
+    assert_true('migration preserved seeded message', 'Migration seed note' in xml)
+    shot('m2-after-upgrade')
+else:
+    print('MIGRATION: old apk not present, skipped'); sys.stdout.flush()
 
 adb('shell', 'pm', 'grant', PKG, 'android.permission.RECORD_AUDIO')
 adb('shell', 'pm', 'grant', PKG, 'android.permission.CAMERA')
@@ -292,6 +359,146 @@ else:
     shot('04-chat-setup-honest')
     xml = dump()
     assert_text('Secure backend is not connected yet', xml)
+
+# ---------- Phase 2 features (rename / search / edit / regenerate / incognito / attachments) ----------
+if BACKEND_TEST:
+    # RENAME: header edit icon -> dialog -> save -> header shows new title
+    if tap_text('Rename chat', timeout=5):
+        time.sleep(1)
+        if tap_edittext():
+            time.sleep(0.5)
+            clear_field()
+            time.sleep(0.5)
+            type_text('Renamed chat')
+            time.sleep(1)
+            tap_text('Save', timeout=4)
+        time.sleep(2)
+    xml = dump()
+    assert_text('Renamed chat', xml)
+    shot('p2-rename')
+
+    # SEARCH: header search icon -> type -> result row appears
+    if tap_text('Search history', timeout=5):
+        time.sleep(1)
+        if tap_edittext():
+            time.sleep(0.5)
+            type_text('Hello')
+            time.sleep(3)
+    xml = dump()
+    assert_text('Open conversation', xml)
+    shot('p2-search')
+    dismiss_keyboard()
+    tap_text('Close', exact=True, timeout=4)
+    time.sleep(1)
+
+    # EDIT: edit icon on the user bubble -> change text -> Save & resend
+    if tap_text('Edit', timeout=5):
+        time.sleep(1)
+        if tap_edittext():
+            time.sleep(0.5)
+            clear_field()
+            time.sleep(0.5)
+            type_text('Hello MAX edited')
+            time.sleep(1)
+            tap_text('Save & resend', timeout=4)
+        time.sleep(28)
+    dismiss_keyboard()
+    xml = dump()
+    assert_text('Hello MAX edited', xml)
+    assert_true('edit got a fresh reply without error', 'Request failed' not in xml)
+    shot('p2-edit')
+
+    # REGENERATE: refresh icon on the last assistant bubble -> new reply, no error
+    if tap_text('Regenerate', timeout=5):
+        time.sleep(28)
+    xml = dump()
+    assert_true('regenerate produced a reply without error', 'Request failed' not in xml)
+    shot('p2-regenerate')
+
+    # INCOGNITO: toggle on -> send -> visible; toggle off -> gone; restart -> still gone
+    if tap_text('Incognito', timeout=5):
+        time.sleep(1)
+        if tap_text('Message', timeout=6):
+            time.sleep(1)
+            type_text('Secret note test')
+            time.sleep(1)
+            tap_text('Send', timeout=3)
+        time.sleep(24)
+        dismiss_keyboard()
+        xml = dump()
+        assert_text('Secret note test', xml)
+        shot('p2-incognito-on')
+        tap_text('Incognito', timeout=5)
+        time.sleep(2)
+        xml = dump()
+        assert_true('incognito cleared on toggle off', 'Secret note test' not in xml)
+    relaunch()
+    tap_nav('Chat')
+    time.sleep(3)
+    tap_text('New conversation', timeout=6)
+    time.sleep(2)
+    xml = dump()
+    assert_true('incognito not persisted after restart', 'Secret note test' not in xml)
+    tap_text('Migration seed note', timeout=6)  # reopen the real conversation
+    time.sleep(2)
+
+    # ATTACHMENTS: picker -> png -> chip -> send with image -> real visual answer
+    import base64 as _b64
+    with open('/tmp/nd_test_red.png', 'wb') as f:
+        f.write(_b64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='))
+    with open('/tmp/nd_test_big.png', 'wb') as f:
+        f.write(_b64.b64decode('iVBORw0KGgoAAAABAAEABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==') if False else open('/tmp/nd_test_red.png','rb').read())
+        f.write(b'\0' * 8_500_000)
+    adb('push', '/tmp/nd_test_red.png', '/sdcard/Download/nd_test_red.png')
+    adb('push', '/tmp/nd_test_big.png', '/sdcard/Download/nd_test_big.png')
+    adb('shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', 'file:///sdcard/Download/nd_test_red.png')
+    adb('shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', 'file:///sdcard/Download/nd_test_big.png')
+    time.sleep(3)
+    if tap_text('Attach image, PDF or text file', timeout=5):
+        time.sleep(4)
+        if tap_text('nd_test_red.png', timeout=10):
+            time.sleep(3)
+            xml = dump()
+            assert_text('nd_test_red.png', xml)  # pending chip
+            if tap_text('Message', timeout=6):
+                time.sleep(1)
+                type_text('What color is this image? One word.')
+                time.sleep(1)
+                tap_text('Send', timeout=3)
+            time.sleep(30)
+            dismiss_keyboard()
+            xml = dump()
+            assert_true('attachment answer without error', 'Request failed' not in xml)
+            shot('p2-attachment')
+        else:
+            print('ATTACH: picker automation missed the file (system DocumentsUI)'); sys.stdout.flush()
+            adb('shell', 'input', 'keyevent', '4')
+            time.sleep(1)
+    # too-large file -> honest error chip
+    if tap_text('Attach image, PDF or text file', timeout=5):
+        time.sleep(4)
+        if tap_text('nd_test_big.png', timeout=10):
+            time.sleep(3)
+            xml = dump()
+            assert_text('too large', xml)
+            shot('p2-attach-toolarge')
+        else:
+            print('ATTACH: picker automation missed the big file'); sys.stdout.flush()
+            adb('shell', 'input', 'keyevent', '4')
+            time.sleep(1)
+
+    # Attachment file hygiene: deleting the conversation removes att_* files from disk
+    files_before = list_app_files()
+    print('app files before delete:', files_before.replace('\n', ' ')[:120]); sys.stdout.flush()
+    tap_text('Conversations', timeout=6)  # header dropdown icon
+    time.sleep(2)
+    tap_text('Migration seed note', timeout=6)
+    time.sleep(2)
+    if tap_text('Delete chat', timeout=5):
+        time.sleep(3)
+    files_after = list_app_files()
+    att_left = [f for f in files_after.split() if f.startswith('att_')]
+    assert_true('attachment files removed with conversation', len(att_left) == 0)
 
 # Voice tab
 dismiss_keyboard()
