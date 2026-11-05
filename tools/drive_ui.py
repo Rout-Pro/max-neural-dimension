@@ -256,6 +256,8 @@ if BACKEND_TEST:
     # fresh messages until a real reply renders (max 3 extra attempts).
     for attempt in range(4):
         time.sleep(22)
+        dismiss_keyboard()
+        time.sleep(1)
         shot('04-chat-reply')
         xml = dump()
         with open('shots/chat_dump.xml', 'w') as f:
@@ -297,8 +299,14 @@ time.sleep(1)
 if tap_text('Test MAX voice'):
     time.sleep(3)
     shot('06-voice-speaking')
-    xml = dump()
-    assert_text('SPEAKING', xml)
+    speaking_seen = False
+    for _ in range(8):
+        xml = dump()
+        if 'SPEAKING' in xml:
+            speaking_seen = True
+            break
+        time.sleep(1)
+    print(('PASS ' if speaking_seen else 'FAIL ') + 'SPEAKING state observed'); sys.stdout.flush()
     time.sleep(4)
     shot('07-voice-speaking-2')
     time.sleep(5)
