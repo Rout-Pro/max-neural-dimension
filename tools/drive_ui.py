@@ -116,6 +116,17 @@ def field_text_below(label_prefix):
             return min(cands, key=lambda e: e['b'][1])['text']
     return None
 
+def clear_field_verified():
+    for _ in range(3):
+        clear_field()
+        time.sleep(0.5)
+        xml = dump()
+        nodes = [n for n in parse_nodes(xml) if 'EditText' in n['cls']]
+        if all(not n['text'] for n in nodes):
+            return True
+    print('CLEAR-FIELD: could not verify empty field'); sys.stdout.flush()
+    return False
+
 def clear_field():
     # CTRL+A then DEL, plus a DEL sweep as fallback.
     adb('shell', 'input', 'keyevent', '--keycomb', '113', '29')
@@ -170,7 +181,15 @@ def dismiss_anr():
             return True
     return False
 
+def close_dropdown_if_open():
+    xml = dump()
+    # an open conversation dropdown lists stored conversation titles over the chat screen
+    if 'Migration seed note' in xml or ('New conversation' in xml and 'Message' not in xml):
+        adb('shell', 'input', 'keyevent', '4')
+        time.sleep(1)
+
 def tap_nav(label, timeout=12):
+    close_dropdown_if_open()
     # Bottom-nav tap that survives an open keyboard and ANR dialogs.
     if tap_text(label, timeout=3, exact=True):
         return True
@@ -427,6 +446,24 @@ def fresh_conversation():
     tap_text('New chat', timeout=8)
     time.sleep(1)
 
+def long_press_text(t, timeout=10):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for n in parse_nodes(dump()):
+            for label in (n['text'], n['desc']):
+                if label and t.lower() in label.lower():
+                    x = (n['b'][0] + n['b'][2]) // 2
+                    y = (n['b'][1] + n['b'][3]) // 2
+                    adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(y), '900')
+                    print('long-pressed', label); sys.stdout.flush()
+                    return True
+        time.sleep(1)
+    return False
+
+def in_file_preview():
+    xml = dump()
+    return 'Lens' in xml and 'Share' in xml
+
 def attach_file(fname, timeout=15):
     if not tap_text('Attach image, PDF or text file', timeout=12):
         PICKER['ok'] = False
@@ -436,13 +473,29 @@ def attach_file(fname, timeout=15):
         time.sleep(1)
         return False
     time.sleep(4)
-    if not tap_text(fname, timeout=timeout):
+    # DocumentsUI on this image previews images on tap; long-press selects instead
+    if not long_press_text(fname, timeout=timeout):
         PICKER['ok'] = False
-        print('PICKER-MISS: ' + fname + ' not tappable in DocumentsUI'); sys.stdout.flush()
+        print('PICKER-MISS: ' + fname + ' not found in DocumentsUI'); sys.stdout.flush()
         shot('p2-picker-miss-' + fname)
         adb('shell', 'input', 'keyevent', '4')
         time.sleep(1)
         return False
+    time.sleep(2)
+    if in_file_preview():
+        adb('shell', 'input', 'keyevent', '4')   # out of preview back to the grid
+        time.sleep(2)
+        long_press_text(fname, timeout=6)
+        time.sleep(2)
+    if not tap_text('Select', timeout=6):
+        # some builds select directly on long-press release; check for the checkmark state
+        if not tap_text(fname + ' selected', timeout=2) and not tap_text('Select', exact=True, timeout=3):
+            PICKER['ok'] = False
+            print('PICKER-MISS: no Select control after long-press'); sys.stdout.flush()
+            shot('p2-picker-miss-select')
+            adb('shell', 'input', 'keyevent', '4')
+            time.sleep(1)
+            return False
     time.sleep(3)
     return True
 
@@ -484,7 +537,7 @@ if BACKEND_TEST:
         time.sleep(1)
         if tap_edittext():
             time.sleep(0.5)
-            clear_field()
+            clear_field_verified()
             time.sleep(0.5)
             type_text('Renamed chat')
             time.sleep(1)
@@ -516,7 +569,7 @@ if BACKEND_TEST:
         time.sleep(1)
         if tap_edittext():
             time.sleep(0.5)
-            clear_field()
+            clear_field_verified()
             time.sleep(0.5)
             type_text('Reply with the word PAPAYA only.')
             time.sleep(1)
@@ -605,8 +658,10 @@ if BACKEND_TEST:
     # === Section 7: delete conv1 -> only its attachment file removed ===
     tap_text('Conversations', timeout=8)
     time.sleep(2)
-    tap_text('What color is this image? One word.', timeout=8)  # conv1 title (its first message text)
-    time.sleep(2)
+    if not tap_text('What color is this image? One word.', timeout=8):  # conv1 title (its first message text)
+        adb('shell', 'input', 'keyevent', '4')
+        time.sleep(1)
+    time.sleep(1)
     if tap_text('Delete chat', timeout=6):
         time.sleep(3)
     filesF = set(list_app_files().split())
