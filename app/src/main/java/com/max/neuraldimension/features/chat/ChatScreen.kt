@@ -440,12 +440,17 @@ private fun MessageBubble(
                     val raw = m.text.removePrefix("ERROR::")
                     val quota = raw.contains("429") || raw.contains("quota", ignoreCase = true) ||
                         raw.contains("rate limit", ignoreCase = true) || raw.contains("retry later", ignoreCase = true)
+                    val unavailable = raw.contains("503") || raw.contains("unavailable", ignoreCase = true)
                     var showDetail by remember { mutableStateOf(false) }
                     Text("Request failed", color = NdError, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        if (quota) "The AI provider is rate-limited right now (too many requests). Wait a minute, then send your message again."
-                        else "The backend could not answer this request. Please try again.",
+                        when {
+                            // No timing promise: per-minute windows and daily quotas recover differently.
+                            quota -> "The AI provider's rate or quota limit has been reached. Please try again later."
+                            unavailable -> "The AI provider is temporarily unavailable. Please try again later."
+                            else -> "The backend could not answer this request. Please try again."
+                        },
                         color = NdMuted, fontSize = 12.sp
                     )
                     TextButton(onClick = { showDetail = !showDetail }) {

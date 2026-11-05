@@ -593,8 +593,9 @@ if BACKEND_TEST:
     # === Section 8: error rendering - concise quota message + expandable detail (deterministic trigger) ===
     fresh_conversation()
     type_and_send('TRIGGER429 test')
-    ok, xml = poll_reply(lambda x: 'rate-limited' in x.lower())
-    assert_true('concise quota error shown', ok and 'Wait a minute' in xml)
+    ok, xml = poll_reply(lambda x: 'rate or quota limit' in x.lower())
+    assert_true('concise quota error shown', ok)
+    assert_true('no fixed retry-time promised', 'minute' not in xml.lower())
     assert_true('raw JSON not dumped on screen', 'exceeded your current quota' not in xml)
     if ok and tap_text('Technical details', timeout=6):
         time.sleep(2)
