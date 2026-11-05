@@ -85,24 +85,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return id
     }
 
-    fun send(text: String) {
-        if (text.isBlank() || sending.value) return
-        viewModelScope.launch { generateAndStore(text) }
+    fun send(text: String, attachment: PendingAttachment? = null) {
+        if ((text.isBlank() && attachment == null) || sending.value) return
+        viewModelScope.launch { generateAndStore(text, attachment = attachment) }
     }
 
+    /** Attachment picked in the UI; bytes kept on disk, base64 read only when sending. */
+    data class PendingAttachment(val name: String, val mime: String, val path: String)
+
     /** Core exchange used by chat and voice: stores user message, streams assistant reply, returns it. */
-    suspend fun generateAndStore(text: String, storeUser: Boolean = true): String {
+    suspend fun generateAndStore(text: String, storeUser: Boolean = true, attachment: PendingAttachment? = null): String {
         sending.value = true
         try {
             val s = settings.value
             val cid = if (incognito.value) -1L else ensureConversation(text)
             if (storeUser) {
-                if (incognito.value) {
-                    incognitoMessages.value = incognitoMessages.value +
-                        Message(id = -System.currentTimeMillis() - 1, conversationId = -1, role = "user", text = text)
-                } else {
-                    db.chatDao().insertMessage(Message(conversationId = cid, role = "user", text = text))
-                }
+                val userMsg = Message(
+                    id = if (incognito.value) -System.currentTimeMillis() - 1 else 0,
+                    conversationId = cid, role = "user", text = text,
+                    attachmentName = attachment?.name,
+                    attachmentMime = attachment?.mime,
+                    attachmentPath = attachment?.path
+                )
+                if (incognito.value) incognitoMessages.value = incognitoMessages.value + userMsg
+                else db.chatDao().insertMessage(userMsg)
             }
             if (!backend.isConfigured(s)) {
                 val setupMsg = Message(id = if (incognito.value) -System.currentTimeMillis() else 0,
@@ -142,7 +148,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val sb = StringBuilder()
             var lastWrite = 0L
             try {
-                backend.streamChat(s, history) { tok ->
+                val atts = attachment?.let {
+                    val bytes = java.io.File(it.path).readBytes()
+                    listOf(com.max.neuraldimension.domain.AttachmentData(
+                        it.name, it.mime, android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)))
+                } ?: emptyList()
+                backend.streamChat(s, history, atts) { tok ->
                     sb.append(tok)
                     val now = android.os.SystemClock.uptimeMillis()
                     if (now - lastWrite > 250) {

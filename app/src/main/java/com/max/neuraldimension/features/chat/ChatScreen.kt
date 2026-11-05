@@ -1,3 +1,5 @@
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
 package com.max.neuraldimension.features.chat
 
 import androidx.compose.foundation.background
@@ -33,6 +35,9 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -91,7 +96,38 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<Message>>(emptyList()) }
     var editTarget by remember { mutableStateOf<Message?>(null) }
+    var pendingAttachment by remember { mutableStateOf<AppViewModel.PendingAttachment?>(null) }
+    var attachError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val attachLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val name = context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                        val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (i >= 0 && c.moveToFirst()) c.getString(i) else null
+                    } ?: "file"
+                    val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                    val supported = mime.startsWith("image/") || mime == "application/pdf" || mime == "text/plain"
+                    val bytes = context.contentResolver.openInputStream(uri)?.readBytes()
+                    when {
+                        !supported -> attachError = "Unsupported file type ($mime). Images, PDF and plain text only."
+                        bytes == null -> attachError = "Could not read that file."
+                        bytes.size > 7_000_000 -> attachError = "File too large (about 7 MB max)."
+                        else -> {
+                            val f = java.io.File(context.filesDir, "att_${System.currentTimeMillis()}_$name")
+                            f.writeBytes(bytes)
+                            pendingAttachment = AppViewModel.PendingAttachment(name, mime, f.absolutePath)
+                            attachError = null
+                        }
+                    }
+                } catch (e: Exception) {
+                    attachError = "Could not read that file."
+                }
+            }
+        }
+    }
     val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
 
@@ -287,11 +323,34 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
             )
         }
 
+        // ---- pending attachment chip ----
+        pendingAttachment?.let { pa ->
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.AttachFile, contentDescription = null, tint = NdNeon, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(pa.name.take(38), color = NdSilver, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                IconButton(onClick = { pendingAttachment = null }, modifier = Modifier.size(20.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Remove attachment", tint = NdMuted, modifier = Modifier.size(14.dp))
+                }
+            }
+        }
+        attachError?.let {
+            Text(it, color = NdWarn, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp))
+        }
+
         // ---- input ----
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            IconButton(onClick = {
+                attachLauncher.launch(arrayOf("image/*", "application/pdf", "text/plain"))
+            }) {
+                Icon(Icons.Default.AttachFile, contentDescription = "Attach image, PDF or text file", tint = NdLavender)
+            }
             Row(
                 Modifier.weight(1f)
                     .background(NdPanelDeep, RoundedCornerShape(24.dp))
@@ -310,7 +369,11 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
                     }
                 )
                 IconButton(onClick = {
-                    if (input.isNotBlank()) { vm.send(input.trim()); input = "" }
+                    if (input.isNotBlank() || pendingAttachment != null) {
+                        vm.send(input.trim(), pendingAttachment)
+                        input = ""
+                        pendingAttachment = null
+                    }
                 }) {
                     Icon(Icons.Default.Send, contentDescription = "Send", tint = NdNeon)
                 }
@@ -340,6 +403,13 @@ private fun MessageBubble(
                 )
                 .padding(horizontal = 12.dp, vertical = 9.dp)
         ) {
+            if (m.attachmentName != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
+                    Icon(Icons.Default.AttachFile, contentDescription = null, tint = NdNeon, modifier = Modifier.size(13.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(m.attachmentName.take(34), color = NdLavender, fontSize = 11.sp)
+                }
+            }
             when {
                 m.text.startsWith("SETUP_REQUIRED::") -> {
                     Text("Secure backend is not connected yet", color = NdWarn, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)

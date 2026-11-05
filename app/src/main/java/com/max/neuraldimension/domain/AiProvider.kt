@@ -14,6 +14,9 @@ import java.util.concurrent.TimeUnit
 
 data class ChatTurn(val role: String, val text: String)
 
+/** An attachment on the message being sent; data is base64. */
+data class AttachmentData(val name: String, val mime: String, val data: String)
+
 class AiException(message: String) : Exception(message)
 
 object Personalities {
@@ -67,7 +70,7 @@ class BackendClient(private val http: OkHttpClient = defaultClient()) {
     }
 
     /** Streams a reply from the secure backend; onToken per text chunk. */
-    suspend fun streamChat(s: MaxSettings, history: List<ChatTurn>, onToken: (String) -> Unit): String =
+    suspend fun streamChat(s: MaxSettings, history: List<ChatTurn>, attachments: List<AttachmentData> = emptyList(), onToken: (String) -> Unit): String =
         withContext(Dispatchers.IO) {
             if (!isConfigured(s)) throw AiException("NO_BACKEND")
             val msgs = JSONArray()
@@ -76,10 +79,15 @@ class BackendClient(private val http: OkHttpClient = defaultClient()) {
                     .put("role", if (t.role == "user") "user" else "assistant")
                     .put("content", t.text))
             }
+            val atts = JSONArray()
+            attachments.forEach { a ->
+                atts.put(JSONObject().put("name", a.name).put("mime", a.mime).put("data", a.data))
+            }
             val body = JSONObject()
                 .put("messages", msgs)
                 .put("mode", if (s.thinkingMode) "thinking" else "fast")
                 .put("system", Personalities.systemPrompt(s))
+                .put("attachments", atts)
             val req = Request.Builder()
                 .url(s.backendUrl + "/v1/chat")
                 .apply { if (s.appToken.isNotBlank()) header("Authorization", "Bearer ${s.appToken}") }

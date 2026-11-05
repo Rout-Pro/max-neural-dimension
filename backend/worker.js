@@ -70,13 +70,50 @@ async function handleChat(request, env) {
   if (messages.length === 0) return json({ error: "messages required" }, 400);
   const mode = body.mode === "thinking" ? "thinking" : "fast";
   const system = typeof body.system === "string" ? body.system : "";
+  const attErr = validateAttachments(body.attachments);
+  if (attErr) return json({ error: attErr }, 400);
+  const attachments = Array.isArray(body.attachments) ? body.attachments : [];
   const provider = env.PROVIDER || "gemini";
   try {
-    if (provider === "openai") return await chatOpenAI(env, messages, mode, system);
-    return await chatGemini(env, messages, mode, system);
+    if (provider === "openai") return await chatOpenAI(env, messages, mode, system, attachments);
+    return await chatGemini(env, messages, mode, system, attachments);
   } catch (e) {
     return json({ error: "upstream failure: " + (e.message || String(e)) }, 502);
   }
+}
+
+// Attachments ride with the last user message. Honest support matrix:
+// images + PDFs go to Gemini inline; plain text is inlined as text; the rest
+// is rejected here instead of pretending to be understood.
+const MAX_ATTACH = 3;
+const MAX_ATTACH_B64 = 9500000; // ~7 MB raw per file
+function validateAttachments(a) {
+  if (a === undefined || a === null) return null;
+  if (!Array.isArray(a)) return "attachments must be an array";
+  if (a.length > MAX_ATTACH) return `at most ${MAX_ATTACH} attachments per message`;
+  for (const it of a) {
+    const mime = (it && it.mime) || "";
+    const data = (it && it.data) || "";
+    const ok = mime.startsWith("image/") || mime === "application/pdf" || mime === "text/plain";
+    if (!ok) return `unsupported attachment type: ${mime || "unknown"} (images, PDF and plain text only)`;
+    if (typeof data !== "string" || data.length === 0) return "attachment data missing";
+    if (data.length > MAX_ATTACH_B64) return "attachment too large (about 7 MB max)";
+  }
+  return null;
+}
+
+function attachmentParts(attachments) {
+  const parts = [];
+  for (const it of attachments) {
+    if (it.mime === "text/plain") {
+      let txt = "";
+      try { txt = Buffer.from(it.data, "base64").toString("utf8"); } catch { txt = ""; }
+      parts.push({ text: `\n\n[Attached file: ${it.name || "file.txt"}]\n${txt.slice(0, 20000)}` });
+    } else {
+      parts.push({ inline_data: { mime_type: it.mime, data: it.data } });
+    }
+  }
+  return parts;
 }
 
 // Parse Retry-After: delta-seconds or HTTP-date. null = absent/unparsable.
@@ -89,7 +126,7 @@ function retryAfterMs(h) {
   return null;
 }
 
-async function chatGemini(env, messages, mode, system) {
+async function chatGemini(env, messages, mode, system, attachments = []) {
   if (!env.GEMINI_API_KEY) return json({ error: "GEMINI_API_KEY not set on backend" }, 500);
   const model = mode === "thinking"
     ? (env.MODEL_THINKING || "gemini-3.6-flash")
@@ -109,9 +146,12 @@ async function chatGemini(env, messages, mode, system) {
         },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
-          contents: messages.map((m) => ({
+          contents: messages.map((m, i) => ({
             role: m.role === "assistant" ? "model" : "user",
-            parts: [{ text: String(m.content) }],
+            parts: [
+              { text: String(m.content) },
+              ...(i === messages.length - 1 && m.role === "user" ? attachmentParts(attachments) : []),
+            ],
           })),
         }),
       }
@@ -152,7 +192,7 @@ async function chatGemini(env, messages, mode, system) {
   });
 }
 
-async function chatOpenAI(env, messages, mode, system) {
+async function chatOpenAI(env, messages, mode, system, attachments = []) {
   if (!env.OPENAI_API_KEY) return json({ error: "OPENAI_API_KEY not set on backend" }, 500);
   const base = (env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
   const model = mode === "thinking"

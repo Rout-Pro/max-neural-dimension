@@ -10,6 +10,8 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -26,7 +28,11 @@ data class Message(
     val conversationId: Long,
     val role: String, // "user" or "assistant"
     val text: String,
-    val ts: Long = System.currentTimeMillis()
+    val ts: Long = System.currentTimeMillis(),
+    val attachmentName: String? = null,
+    val attachmentMime: String? = null,
+    /** Path under filesDir holding the original bytes (not kept in Room). */
+    val attachmentPath: String? = null
 )
 
 @Entity(tableName = "tasks")
@@ -85,7 +91,15 @@ interface TaskDao {
     suspend fun delete(t: TaskItem)
 }
 
-@Database(entities = [Conversation::class, Message::class, TaskItem::class], version = 1, exportSchema = false)
+@Database(entities = [Conversation::class, Message::class, TaskItem::class], version = 2, exportSchema = false)
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE messages ADD COLUMN attachmentName TEXT")
+        db.execSQL("ALTER TABLE messages ADD COLUMN attachmentMime TEXT")
+        db.execSQL("ALTER TABLE messages ADD COLUMN attachmentPath TEXT")
+    }
+}
+
 abstract class AppDb : RoomDatabase() {
     abstract fun chatDao(): ChatDao
     abstract fun taskDao(): TaskDao
@@ -93,7 +107,9 @@ abstract class AppDb : RoomDatabase() {
     companion object {
         @Volatile private var instance: AppDb? = null
         fun get(context: Context): AppDb = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "max.db").build().also { instance = it }
+            instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "max.db")
+                .addMigrations(MIGRATION_1_2)
+                .build().also { instance = it }
         }
     }
 }
