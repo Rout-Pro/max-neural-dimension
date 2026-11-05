@@ -58,7 +58,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleIncognito() {
         incognito.value = !incognito.value
-        if (!incognito.value) incognitoMessages.value = emptyList()
+        if (!incognito.value) {
+            // Incognito leaves nothing behind: drop messages AND their attachment files.
+            incognitoMessages.value.forEach { m -> m.attachmentPath?.let { runCatching { java.io.File(it).delete() } } }
+            incognitoMessages.value = emptyList()
+        }
     }
 
     /** One-shot text queued from the home input, consumed by the chat screen. */
@@ -220,6 +224,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteConversation(c: Conversation) {
         viewModelScope.launch {
+            db.chatDao().messages(c.id).first().forEach { m ->
+                m.attachmentPath?.let { runCatching { java.io.File(it).delete() } }
+            }
             db.chatDao().deleteMessagesFor(c.id)
             db.chatDao().deleteConversation(c)
             if (currentConversationId.value == c.id) currentConversationId.value = null
