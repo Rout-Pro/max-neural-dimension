@@ -155,7 +155,7 @@ void main() {
     private val proj = FloatArray(16); private val view = FloatArray(16)
     private val mvp = FloatArray(16); private val tmp = FloatArray(16); private val model = FloatArray(16)
     private val normalMat = FloatArray(9)
-    private val camPos = floatArrayOf(0f, 0.30f, 4.3f)
+    private val camPos = floatArrayOf(0f, 0.25f, 4.0f)
 
     private lateinit var bgTri: MeshGpu
     private lateinit var quad: MeshGpu
@@ -214,7 +214,7 @@ void main() {
         GLES30.glDepthMask(true)
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
 
-        Matrix.setLookAtM(view, 0, camPos[0], camPos[1], camPos[2], 0f, -0.05f, 0f, 0f, 1f, 0f)
+        Matrix.setLookAtM(view, 0, camPos[0], camPos[1], camPos[2], 0f, -0.02f, 0f, 0f, 1f, 0f)
         Matrix.setIdentityM(model, 0)
         drawNode(root, model, transparentPass = false)
         GLES30.glDepthMask(false)

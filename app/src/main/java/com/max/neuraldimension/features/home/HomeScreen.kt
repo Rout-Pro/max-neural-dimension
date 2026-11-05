@@ -3,7 +3,7 @@ package com.max.neuraldimension.features.home
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import com.max.neuraldimension.core.gl.RobotState
 import com.max.neuraldimension.core.gl.RobotView
 import com.max.neuraldimension.core.theme.NdBlack
+import com.max.neuraldimension.core.theme.NdDarkPurple
 import com.max.neuraldimension.core.theme.NdLavender
 import com.max.neuraldimension.core.theme.NdMuted
 import com.max.neuraldimension.core.theme.NdNeon
@@ -122,40 +123,42 @@ fun HomeScreen(vm: AppViewModel, onOpenChat: () -> Unit, onOpenVoice: () -> Unit
                 )
             }
 
-            // ---- robot + floating panels ----
-            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                val w = maxWidth
-                val panelW = 148.dp
-                Column(
-                    Modifier.align(Alignment.CenterStart).padding(start = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    HoloPanel("AI STATUS", Icons.Default.Psychology, 0, { expanded = PanelKind.AI }, Modifier.width(panelW)) {
+            // ---- robot (bounded area; the face is never covered by panels) ----
+            Box(Modifier.weight(0.46f).fillMaxWidth()) {
+                RobotView(Modifier.fillMaxSize())
+            }
+
+            // ---- holographic panels: grid below the robot ----
+            Column(
+                Modifier.weight(0.54f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HoloPanel("AI STATUS", Icons.Default.Psychology, 0, { expanded = PanelKind.AI }, Modifier.weight(1f).fillMaxHeight()) {
                         PanelLine("Backend", if (settings.backendUrl.isNotBlank()) "Linked" else "Not set")
                         PanelLine("State", modeTick.name.lowercase().replaceFirstChar { it.uppercase() }, NdNeon)
                     }
-                    HoloPanel("TASKS", Icons.Default.Task, 1, { expanded = PanelKind.TASKS }, Modifier.width(panelW)) {
+                    HoloPanel("TODAY", Icons.Default.WbSunny, 3, { expanded = PanelKind.DAILY }, Modifier.weight(1f).fillMaxHeight()) {
+                        PanelLine("Time", SimpleDateFormat("HH:mm", Locale.US).format(now))
+                        PanelLine("Date", SimpleDateFormat("EEE, d MMM", Locale.US).format(now))
+                    }
+                }
+                Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HoloPanel("TASKS", Icons.Default.Task, 1, { expanded = PanelKind.TASKS }, Modifier.weight(1f).fillMaxHeight()) {
                         val open = tasks.count { !it.done }
                         PanelLine("Open", open.toString(), if (open > 0) NdWarn else NdOk)
                         PanelLine("Done", tasks.count { it.done }.toString())
                     }
-                    HoloPanel("ALERTS", Icons.Default.Notifications, 2, { expanded = PanelKind.NOTIFS }, Modifier.width(panelW)) {
-                        PanelLine("Feeds", "None linked", NdMuted)
-                    }
-                }
-                Column(
-                    Modifier.align(Alignment.CenterEnd).padding(end = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    HoloPanel("TODAY", Icons.Default.WbSunny, 3, { expanded = PanelKind.DAILY }, Modifier.width(panelW)) {
-                        PanelLine("Time", SimpleDateFormat("HH:mm", Locale.US).format(now))
-                        PanelLine("Date", SimpleDateFormat("EEE, d MMM", Locale.US).format(now))
-                    }
-                    HoloPanel("ACTIONS", Icons.Default.AutoAwesome, 4, { expanded = PanelKind.QUICK }, Modifier.width(panelW)) {
+                    HoloPanel("ACTIONS", Icons.Default.AutoAwesome, 4, { expanded = PanelKind.QUICK }, Modifier.weight(1f).fillMaxHeight()) {
                         PanelLine("Chat / Voice", "Tap to open")
                         PanelLine("Research", "Phase 3", NdMuted)
                     }
-                    HoloPanel("MEMORY", Icons.Default.CheckCircle, 5, { expanded = PanelKind.MEMORY }, Modifier.width(panelW)) {
+                }
+                Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    HoloPanel("ALERTS", Icons.Default.Notifications, 2, { expanded = PanelKind.NOTIFS }, Modifier.weight(1f).fillMaxHeight()) {
+                        PanelLine("Feeds", "None linked", NdMuted)
+                    }
+                    HoloPanel("MEMORY", Icons.Default.CheckCircle, 5, { expanded = PanelKind.MEMORY }, Modifier.weight(1f).fillMaxHeight()) {
                         PanelLine("Saved", "${settings.memories.size} facts")
                         PanelLine("Chats", "Local", NdMuted)
                     }
@@ -169,7 +172,7 @@ fun HomeScreen(vm: AppViewModel, onOpenChat: () -> Unit, onOpenVoice: () -> Unit
             ) {
                 Row(
                     Modifier.weight(1f)
-                        .background(NdBlack.copy(alpha = 0.55f), RoundedCornerShape(26.dp))
+                        .background(NdDarkPurple.copy(alpha = 0.72f), RoundedCornerShape(26.dp))
                         .padding(horizontal = 16.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {

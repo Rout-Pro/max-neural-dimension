@@ -1,4 +1,8 @@
-import re, subprocess, sys, time
+import os, re, subprocess, sys, time
+
+BACKEND_URL = os.environ.get('ND_TEST_BACKEND_URL', '').strip()
+APP_TOKEN = os.environ.get('ND_TEST_APP_TOKEN', '').strip()
+BACKEND_TEST = bool(BACKEND_URL and APP_TOKEN)
 
 PKG = 'com.max.neuraldimension'
 
@@ -53,7 +57,55 @@ def tap_text(t, timeout=12, exact=False):
     return False
 
 def type_text(s):
-    adb('shell', 'input', 'text', s.replace(' ', '%s'))
+    # Fast path for shell/IME-safe strings.
+    if re.fullmatch(r'[A-Za-z0-9:./_\-]+', s):
+        adb('shell', 'input', 'text', s)
+        return
+    # Char-by-char: avoids 'input text' %s-escape and device-shell expansion
+    # of chars like $ % + ^.
+    for ch in s:
+        if ch == ' ':
+            adb('shell', 'input', 'text', '%s')
+        elif ch == "'":
+            adb('shell', 'input', 'text', '"\'"'"'"'"'"''")
+        else:
+            adb('shell', 'input', 'text', "'" + ch + "'")
+
+def parse_nodes(xml):
+    nodes = []
+    for raw in xml.split('<node'):
+        tm = re.search(r'text="([^"]*)"', raw)
+        cm = re.search(r'content-desc="([^"]*)"', raw)
+        cl = re.search(r'class="([^"]*)"', raw)
+        bm = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', raw)
+        if not bm:
+            continue
+        nodes.append({'text': tm.group(1) if tm else '', 'desc': cm.group(1) if cm else '',
+                      'cls': cl.group(1) if cl else '',
+                      'b': tuple(int(bm.group(i)) for i in range(1, 5))})
+    return nodes
+
+def swipe_up():
+    adb('shell', 'input', 'swipe', '540', '2000', '540', '900', '300')
+    time.sleep(1)
+
+def tap_field_below(label_prefix, timeout=12):
+    # Tap the EditText directly below a label; scrolls down while searching.
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        nodes = parse_nodes(dump())
+        labs = [n for n in nodes if n['text'].lower().startswith(label_prefix.lower())]
+        edits = [n for n in nodes if 'EditText' in n['cls']]
+        for l in labs:
+            cands = [e for e in edits if l['b'][1] - 10 <= e['b'][1] <= l['b'][3] + 220]
+            if cands:
+                e = min(cands, key=lambda e: e['b'][1])
+                tap((e['b'][0] + e['b'][2]) // 2, (e['b'][1] + e['b'][3]) // 2)
+                print('tapped field below', label_prefix); sys.stdout.flush()
+                return True
+        swipe_up()
+    print('MISS field below', label_prefix); sys.stdout.flush()
+    return False
 
 def dismiss_keyboard():
     # BACK collapses the IME without navigating when a keyboard is showing.
@@ -79,6 +131,28 @@ adb('shell', 'pm', 'grant', PKG, 'android.permission.CAMERA')
 adb('shell', 'am', 'force-stop', PKG)
 adb('shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1')
 time.sleep(14)
+
+if BACKEND_TEST:
+    # Configure the secure backend via the real Settings UI (token arrives via
+    # GitHub Actions secrets -> env; never in repo or APK).
+    tap_nav('Settings')
+    time.sleep(3)
+    if tap_field_below('Backend URL'):
+        time.sleep(1)
+        type_text(BACKEND_URL)
+        time.sleep(1)
+    if tap_field_below('App token'):
+        time.sleep(1)
+        type_text(APP_TOKEN)
+        time.sleep(1)
+    dismiss_keyboard()
+    tap_text('Test connection', timeout=15)
+    time.sleep(6)
+    shot('00-backend-test')
+    xml = dump()
+    assert_text('Backend reachable', xml)
+    tap_nav('Home')
+    time.sleep(4)
 
 shot('01-home-robot')
 xml = dump()
@@ -111,9 +185,15 @@ if tap_text('Message', timeout=6):
     time.sleep(1)
     tap_text('Send', timeout=3)
     time.sleep(4)
-shot('04-chat-setup-honest')
-xml = dump()
-assert_text('Secure backend is not connected yet', xml)
+if BACKEND_TEST:
+    time.sleep(22)
+    shot('04-chat-reply')
+    xml = dump()
+    print('chat screen after send:', 'BACKEND-REPLY-CHECK')
+else:
+    shot('04-chat-setup-honest')
+    xml = dump()
+    assert_text('Secure backend is not connected yet', xml)
 
 # Voice tab
 dismiss_keyboard()

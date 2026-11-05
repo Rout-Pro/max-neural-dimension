@@ -33,6 +33,9 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Boot emulator, install, drive UI, capture screens
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ND_TEST_BACKEND_URL: ${{ secrets.ND_TEST_BACKEND_URL }}
+          ND_TEST_APP_TOKEN: ${{ secrets.ND_TEST_APP_TOKEN }}
         with:
           api-level: 34
           target: google_apis

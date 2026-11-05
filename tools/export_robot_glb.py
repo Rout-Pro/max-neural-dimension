@@ -218,7 +218,7 @@ def main():
     n_torso = g.add_node("torso", mesh_body, t=[0, -1.62, 0], s=[0.98, 0.98, 0.72])
     n_shoulder_l = g.add_node("shoulderL", mesh_body2, t=[-0.82, -1.05, 0], s=[0.34, 0.40, 0.34])
     n_shoulder_r = g.add_node("shoulderR", mesh_body2, t=[0.82, -1.05, 0], s=[0.34, 0.40, 0.34])
-    n_neck = g.add_node("neck", mesh_neck, t=[0, -0.28, 0], s=[0.17, 0.42, 0.17])
+    n_neck = g.add_node("neck", mesh_neck, t=[0, -0.45, 0], s=[0.20, 0.56, 0.20])
 
     n_skull = g.add_node("skull", mesh_body, t=[0, 0.12, 0], s=[0.56, 0.64, 0.58])
     n_face = g.add_node("face", mesh_face, t=[0, 0.10, 0.235], s=[0.465, 0.55, 0.375])
