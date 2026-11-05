@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -87,7 +88,7 @@ fun HomeScreen(vm: AppViewModel, onOpenChat: () -> Unit, onOpenVoice: () -> Unit
     Box(Modifier.fillMaxSize().background(NdBlack)) {
         RobotView(Modifier.fillMaxSize())
 
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
             // ---- top bar ----
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),

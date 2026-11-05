@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -84,7 +85,7 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
     }
 
-    Column(Modifier.fillMaxSize().background(NdBlack).statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(NdBlack).statusBarsPadding().imePadding()) {
         // ---- header: conversation picker + actions ----
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
