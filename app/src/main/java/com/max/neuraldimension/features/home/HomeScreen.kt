@@ -102,12 +102,14 @@ fun HomeScreen(vm: AppViewModel, onOpenChat: () -> Unit, onOpenVoice: () -> Unit
                 }
                 Spacer(Modifier.weight(1f))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val connected = settings.backendUrl.isNotBlank()
-                    StatusDot(if (connected) NdOk else NdWarn)
+                    val configured = settings.backendUrl.isNotBlank()
+                    val verified = configured && settings.backendVerifiedFor == settings.backendUrl + "\n" + settings.appToken
+                    val dotColor = if (verified) NdOk else if (configured) NdWarn else NdMuted
+                    StatusDot(dotColor)
                     Spacer(Modifier.width(5.dp))
                     Text(
-                        if (connected) "Backend linked" else "No backend",
-                        color = if (connected) NdOk else NdWarn, fontSize = 11.sp
+                        if (verified) "Backend linked" else if (configured) "Not tested" else "No backend",
+                        color = dotColor, fontSize = 11.sp
                     )
                 }
             }
@@ -130,16 +132,16 @@ fun HomeScreen(vm: AppViewModel, onOpenChat: () -> Unit, onOpenVoice: () -> Unit
 
             // The 3D scene is the full-screen background (RobotView above); compact-bust
             // camera framing keeps the face in this clear zone, above the panels.
-            Spacer(Modifier.weight(0.42f))
+            Spacer(Modifier.weight(0.46f))
 
             // ---- holographic panels: grid below the robot ----
             Column(
-                Modifier.weight(0.58f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                Modifier.weight(0.54f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     HoloPanel("AI STATUS", Icons.Default.Psychology, 0, { expanded = PanelKind.AI }, Modifier.weight(1f).fillMaxHeight()) {
-                        PanelLine("Backend", if (settings.backendUrl.isNotBlank()) "Linked" else "Not set")
+                        PanelLine("Backend", if (settings.backendVerifiedFor == settings.backendUrl + "\n" + settings.appToken && settings.backendUrl.isNotBlank()) "Linked" else if (settings.backendUrl.isNotBlank()) "Not tested" else "Not set")
                         PanelLine("State", modeTick.name.lowercase().replaceFirstChar { it.uppercase() }, NdNeon)
                     }
                     HoloPanel("TODAY", Icons.Default.WbSunny, 3, { expanded = PanelKind.DAILY }, Modifier.weight(1f).fillMaxHeight()) {
@@ -235,6 +237,7 @@ fun HomeScreen(vm: AppViewModel, onOpenChat: () -> Unit, onOpenVoice: () -> Unit
                     when (kind) {
                         PanelKind.AI -> {
                             PanelLine("Backend", if (settings.backendUrl.isNotBlank()) settings.backendUrl else "Not configured", NdSilver)
+                            PanelLine("Verified", if (settings.backendVerifiedFor == settings.backendUrl + "\n" + settings.appToken && settings.backendUrl.isNotBlank()) "Yes - health test passed" else "No - run Test connection in Settings", if (settings.backendVerifiedFor == settings.backendUrl + "\n" + settings.appToken && settings.backendUrl.isNotBlank()) NdOk else NdWarn)
                             PanelLine("Mode", if (settings.thinkingMode) "Thinking" else "Fast", NdSilver)
                             PanelLine("State", modeTick.name, NdNeon)
                             Spacer(Modifier.height(6.dp))

@@ -30,7 +30,9 @@ data class MaxSettings(
     val language: String = "en-IN",
     val animIntensity: Float = 1.0f,
     val reducedMotion: Boolean = false,
-    val memories: Set<String> = emptySet()
+    val memories: Set<String> = emptySet(),
+    /** "url\n token" pair that last passed an authenticated health test; stale entries stop matching when config changes. */
+    val backendVerifiedFor: String = ""
 )
 
 class SettingsRepository(private val context: Context) {
@@ -47,6 +49,7 @@ class SettingsRepository(private val context: Context) {
         val ANIM_INTENSITY = floatPreferencesKey("anim_intensity")
         val REDUCED_MOTION = booleanPreferencesKey("reduced_motion")
         val MEMORIES = stringSetPreferencesKey("memories")
+        val VERIFIED = stringPreferencesKey("backend_verified_for")
     }
 
     val settings: Flow<MaxSettings> = context.dataStore.data.map { p -> snapshot(p) }
@@ -65,6 +68,7 @@ class SettingsRepository(private val context: Context) {
             p[K.ANIM_INTENSITY] = n.animIntensity
             p[K.REDUCED_MOTION] = n.reducedMotion
             p[K.MEMORIES] = n.memories
+            p[K.VERIFIED] = n.backendVerifiedFor
         }
     }
 
@@ -79,6 +83,7 @@ class SettingsRepository(private val context: Context) {
         language = p[K.LANGUAGE] ?: "en-IN",
         animIntensity = p[K.ANIM_INTENSITY] ?: 1.0f,
         reducedMotion = p[K.REDUCED_MOTION] ?: false,
-        memories = p[K.MEMORIES] ?: emptySet()
+        memories = p[K.MEMORIES] ?: emptySet(),
+        backendVerifiedFor = p[K.VERIFIED] ?: ""
     )
 }

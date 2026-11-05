@@ -168,10 +168,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun testConnection() {
         viewModelScope.launch {
             connectionTest.value = "Testing..."
-            connectionTest.value = try {
+            val res = try {
                 backend.testConnection(settings.value)
             } catch (e: Exception) {
                 e.message ?: "Failed"
+            }
+            connectionTest.value = res
+            if (res.startsWith("Backend reachable")) {
+                // Only a successful authenticated health test marks the backend linked.
+                // Editing URL/token afterwards makes this marker stale automatically.
+                settingsRepo.update { it.copy(backendVerifiedFor = it.backendUrl + "\n" + it.appToken) }
             }
         }
     }

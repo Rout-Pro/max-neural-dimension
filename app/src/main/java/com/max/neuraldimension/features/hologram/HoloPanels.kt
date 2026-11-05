@@ -26,7 +26,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -68,11 +67,6 @@ fun HoloPanel(
     Column(
         modifier = modifier
             .graphicsLayer { translationY = dy.dp.toPx(); rotationZ = rot }
-            .shadow(
-                elevation = 18.dp, shape = shape, clip = false,
-                ambientColor = NdViolet.copy(alpha = 0.35f),
-                spotColor = NdViolet.copy(alpha = 0.45f)
-            )
             .clip(shape)
             .background(
                 Brush.verticalGradient(

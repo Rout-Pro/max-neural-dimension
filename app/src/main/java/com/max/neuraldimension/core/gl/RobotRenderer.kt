@@ -223,8 +223,8 @@ void main() {
             // Render the scene only into the top band of the surface: the robot can
             // never draw over the dashboard panels below, and the aspect matches
             // the voice screen's approved bust framing.
-            val vh = (surfH * 0.46f).toInt()
-            GLES30.glViewport(0, surfH - vh, surfW, vh)
+            val vh = (surfH * 0.30f).toInt()
+            GLES30.glViewport(0, (surfH * 0.50f).toInt(), surfW, vh)
             Matrix.perspectiveM(proj, 0, 41f, surfW.toFloat() / vh.toFloat(), 0.1f, 100f)
         }
         Matrix.setIdentityM(model, 0)
