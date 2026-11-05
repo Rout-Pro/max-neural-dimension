@@ -6,12 +6,12 @@
  * GEMINI_API_KEY / OPENAI-compatible keys as Worker secrets.
  *
  * Routes:
- *   GET  /v1/health  -> { ok, ts }                      (auth required if APP_TOKEN set)
+ *   GET  /v1/health  -> { ok, ts }                      (auth required)
  *   POST /v1/chat    -> SSE stream of {"t":"chunk"} ... [DONE]
  *      body: { messages: [{role, content}], mode: "fast"|"thinking", system: "..." }
  *
  * Secrets (wrangler secret put ...):
- *   APP_TOKEN        shared token the app must present (optional but recommended)
+ *   APP_TOKEN        shared token the app must present (required; fail closed when unset)
  *   GEMINI_API_KEY   Gemini key (used when PROVIDER=gemini)
  *   OPENAI_API_KEY   OpenAI-compatible key (used when PROVIDER=openai)
  * Vars (wrangler.toml):
@@ -37,7 +37,9 @@ export default {
 };
 
 function authorized(request, env) {
-  if (!env.APP_TOKEN) return true;
+  // Fail closed: until APP_TOKEN is set, deny everything rather than accept
+  // unauthenticated requests during setup.
+  if (!env.APP_TOKEN) return false;
   const h = request.headers.get("Authorization") || "";
   return h === `Bearer ${env.APP_TOKEN}`;
 }
