@@ -5,11 +5,13 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Bundle
+import android.os.SystemClock
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import com.max.neuraldimension.core.gl.RobotState
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -97,6 +99,7 @@ class VoiceEngine(private val context: Context, private val scope: CoroutineScop
 
     /** Synthesize to a WAV file, measure its amplitude envelope, then play it. */
     private suspend fun synthesizeAndPlay(text: String): Boolean {
+        Log.i("MAX_VOICE", "synth start len=" + text.length + " t=" + SystemClock.uptimeMillis())
         val t = tts ?: return false
         if (!ttsReady) return false
         val file = File(context.cacheDir, "max_tts_${System.currentTimeMillis()}.wav")
@@ -114,6 +117,7 @@ class VoiceEngine(private val context: Context, private val scope: CoroutineScop
         if (!ok) { file.delete(); return false }
         val env = analyzeWav(file)
         if (env == null) { file.delete(); return false }
+        Log.i("MAX_VOICE", "synth done bytes=" + file.length() + " windows=" + env.first.size + " windowMs=" + env.second + " t=" + SystemClock.uptimeMillis())
         playWithEnvelope(file, env.first, env.second)
         file.delete()
         return true
@@ -185,6 +189,7 @@ class VoiceEngine(private val context: Context, private val scope: CoroutineScop
                 mp.setDataSource(file.absolutePath)
                 mp.prepare()
                 mp.start()
+                Log.i("MAX_VOICE", "playback start durMs=" + mp.duration + " t=" + SystemClock.uptimeMillis())
             } catch (e: Exception) {
                 runCatching { mp.release() }
                 player = null
@@ -194,13 +199,20 @@ class VoiceEngine(private val context: Context, private val scope: CoroutineScop
             }
             scope.launch(Dispatchers.IO) {
                 try {
+                    var lastLog = 0L
                     while (player === mp && mp.isPlaying) {
                         val idx = mp.currentPosition / windowMs
                         RobotState.mouthAmp = if (idx in amps.indices) amps[idx] else 0f
+                        val now = SystemClock.uptimeMillis()
+                        if (now - lastLog > 200) {
+                            lastLog = now
+                            Log.i("MAX_VOICE", "play posMs=" + mp.currentPosition + " amp=" + String.format("%.2f", RobotState.mouthAmp))
+                        }
                         delay(30)
                     }
                 } catch (_: Exception) { }
                 RobotState.mouthAmp = 0f
+                Log.i("MAX_VOICE", "playback end t=" + SystemClock.uptimeMillis())
                 runCatching { if (player === mp) { mp.stop() } ; mp.release() }
                 if (player === mp) player = null
             }

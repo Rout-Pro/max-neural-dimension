@@ -109,16 +109,30 @@ xml = dump()
 assert_text('LIVE WITH', xml)
 
 # Real TTS voice test -> speaking robot with mouth animation
+# Evidence: screenrecord video of the speaking animation + logcat timeline of
+# synthesis, envelope and playback-position/ampljectory pairs.
+adb('logcat', '-c')
+adb('shell', 'screenrecord', '--time-limit', '30', '/sdcard/max_voice.mp4', '&')
+time.sleep(1)
 if tap_text('Test MAX voice'):
     time.sleep(2)
     shot('06-voice-speaking')
-    time.sleep(6)
-    shot('07-voice-after')
+    time.sleep(3)
+    shot('07-voice-speaking-2')
+    time.sleep(4)
+    shot('08-voice-after')
+time.sleep(1)
+adb('shell', 'pkill', '-f', 'screenrecord')
+time.sleep(2)
+adb('pull', '/sdcard/max_voice.mp4', 'shots/max_voice.mp4')
+with open('shots/max_voice_logcat.txt', 'w') as f:
+    r = adb('logcat', '-d', '-s', 'MAX_VOICE:I')
+    f.write(r.stdout)
 
 # Tools
 tap_text('Tools', exact=True)
 time.sleep(3)
-shot('08-tools')
+shot('09-tools')
 xml = dump()
 assert_text('Flashlight', xml)
 assert_text('Battery', xml)
@@ -126,7 +140,7 @@ assert_text('Battery', xml)
 # Settings
 tap_text('Settings', exact=True)
 time.sleep(3)
-shot('09-settings')
+shot('10-settings')
 xml = dump()
 assert_text('SECURE BACKEND', xml)
 assert_text('Test connection', xml)
