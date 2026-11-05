@@ -3,6 +3,9 @@ import os, re, subprocess, sys, time
 BACKEND_URL = os.environ.get('ND_TEST_BACKEND_URL', '').strip()
 APP_TOKEN = os.environ.get('ND_TEST_APP_TOKEN', '').strip()
 BACKEND_TEST = bool(BACKEND_URL and APP_TOKEN)
+ONLY = set(x.strip() for x in os.environ.get('ND_SECTIONS', 'all').split(','))
+def want(name): return 'all' in ONLY or name in ONLY
+
 
 PKG = 'com.max.neuraldimension'
 
@@ -279,47 +282,48 @@ if not settle(120):   # let a fresh emulator finish boot jank before any driving
 OLD_APK = os.environ.get('ND_OLD_APK', '/tmp/old.apk')
 NEW_APK = os.environ.get('ND_NEW_APK', 'app/build/outputs/apk/debug/NeuralDimension-2.0.apk')
 
-# ---------- Room 1->2 migration evidence: seed with the RELEASED app, upgrade in place ----------
-if os.path.exists(OLD_APK):
-    print('MIGRATION: installing previous release APK'); sys.stdout.flush()
-    adb('shell', 'pm', 'uninstall', PKG)
-    r = adb('install', OLD_APK)
-    print('old install rc:', r.returncode, (r.stdout or '').strip()[-60:]); sys.stdout.flush()
-    relaunch()
-    tap_nav('Chat')
-    time.sleep(3)
-    if tap_text('Message', timeout=8):
-        time.sleep(1)
-        type_text('Migration seed note')
-        time.sleep(1)
-        tap_text('Send', timeout=3)
-    time.sleep(6)
-    dismiss_keyboard()
-    shot('m1-old-seed')
-    r = adb('install', '-r', '-d', NEW_APK)
-    print('upgrade install rc:', r.returncode, (r.stdout or '').strip()[-60:]); sys.stdout.flush()
-    relaunch()
-    tap_nav('Chat')
-    time.sleep(3)
-    tap_text('New conversation', timeout=8)  # header picker
-    time.sleep(2)
-    tap_text('Migration seed note', timeout=8)
-    time.sleep(2)
-    xml = dump()
-    assert_true('migration preserved seeded message', 'Migration seed note' in xml)
-    shot('m2-after-upgrade')
-else:
-    print('MIGRATION: old apk not present, skipped'); sys.stdout.flush()
+if want('migration'):
+    # ---------- Room 1->2 migration evidence: seed with the RELEASED app, upgrade in place ----------
+    if os.path.exists(OLD_APK):
+        print('MIGRATION: installing previous release APK'); sys.stdout.flush()
+        adb('shell', 'pm', 'uninstall', PKG)
+        r = adb('install', OLD_APK)
+        print('old install rc:', r.returncode, (r.stdout or '').strip()[-60:]); sys.stdout.flush()
+        relaunch()
+        tap_nav('Chat')
+        time.sleep(3)
+        if tap_text('Message', timeout=8):
+            time.sleep(1)
+            type_text('Migration seed note')
+            time.sleep(1)
+            tap_text('Send', timeout=3)
+        time.sleep(6)
+        dismiss_keyboard()
+        shot('m1-old-seed')
+        r = adb('install', '-r', '-d', NEW_APK)
+        print('upgrade install rc:', r.returncode, (r.stdout or '').strip()[-60:]); sys.stdout.flush()
+        relaunch()
+        tap_nav('Chat')
+        time.sleep(3)
+        tap_text('New conversation', timeout=8)  # header picker
+        time.sleep(2)
+        tap_text('Migration seed note', timeout=8)
+        time.sleep(2)
+        xml = dump()
+        assert_true('migration preserved seeded message', 'Migration seed note' in xml)
+        shot('m2-after-upgrade')
+    else:
+        print('MIGRATION: old apk not present, skipped'); sys.stdout.flush()
 
-adb('shell', 'pm', 'grant', PKG, 'android.permission.RECORD_AUDIO')
-adb('shell', 'pm', 'grant', PKG, 'android.permission.CAMERA')
-adb('shell', 'am', 'force-stop', PKG)
-adb('shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1')
-time.sleep(14)
-for _ in range(8):
-    if not dismiss_anr():
-        break
-    time.sleep(3)
+    adb('shell', 'pm', 'grant', PKG, 'android.permission.RECORD_AUDIO')
+    adb('shell', 'pm', 'grant', PKG, 'android.permission.CAMERA')
+    adb('shell', 'am', 'force-stop', PKG)
+    adb('shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1')
+    time.sleep(14)
+    for _ in range(8):
+        if not dismiss_anr():
+            break
+        time.sleep(3)
 
 if BACKEND_TEST:
     # Seed backend config via the CI-only intent hook (ND_TEST_HOOK build).
@@ -388,6 +392,34 @@ if not sent:
     print('CHAT SEND FAILED'); sys.stdout.flush()
 time.sleep(4)
 if BACKEND_TEST:
+    # SMOKE GATE (fail-fast): environment + mock connectivity + one visible MOCK
+    # reply before any section runs. Abort early and cheap on any failure.
+    tap_nav('Chat')
+    time.sleep(2)
+    tap_text('New chat', timeout=8)
+    time.sleep(1)
+    dismiss_keyboard()
+    if not tap_text('Message', timeout=15):
+        shot('smoke-fail-nofield')
+        print('SMOKE-FAIL: chat field missing'); sys.stdout.flush()
+        sys.exit(1)
+    type_text('smoke ping')
+    time.sleep(1)
+    tap_text('Send', timeout=6)
+    _smoke_ok = False
+    _dl = time.time() + 45
+    while time.time() < _dl:
+        time.sleep(3)
+        if 'MOCK' in dump():
+            _smoke_ok = True
+            break
+    if not _smoke_ok:
+        shot('smoke-fail-noreply')
+        print('SMOKE-FAIL: no visible MOCK reply within 45s - aborting before sections'); sys.stdout.flush()
+        sys.exit(1)
+    print('SMOKE ok: mock reply visible'); sys.stdout.flush()
+
+if BACKEND_TEST and want('core'):
     # Provider free tier occasionally returns 503 "high demand"; retry with
     # fresh messages until a real reply renders (max 3 extra attempts).
     for attempt in range(4):
@@ -529,229 +561,239 @@ if BACKEND_TEST:
         adb('shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', 'file:///sdcard/Download/' + fn)
     time.sleep(3)
 
-    # === Section 1: REGENERATE - reply replaced by provably different content ===
-    fresh_conversation()
-    regen_ok = False
-    type_and_send('Reply with a random 8 digit number only.')
-    ok, xml = poll_reply(lambda x: len(_re.findall(r'\d{8}', x)) > 0 and 'Thinking' not in x)
-    nums = _re.findall(r'\d{8}', xml)
-    if ok and nums:
-        r_prev = nums[-1]
-        if tap_text('Regenerate', timeout=10):
-            ok2, xml2 = poll_reply(lambda x: len(_re.findall(r'\d{8}', x)) > 0 and 'Thinking' not in x)
-            nums2 = _re.findall(r'\d{8}', xml2)
-            regen_ok = ok2 and len(nums2) > 0 and nums2[-1] != r_prev
-    assert_true('regenerate replaced reply with new content (mock)', regen_ok)
-    shot('p2-regenerate')
+    if want('regen'):
+        # === Section 1: REGENERATE - reply replaced by provably different content ===
+        fresh_conversation()
+        regen_ok = False
+        type_and_send('Reply with a random 8 digit number only.')
+        ok, xml = poll_reply(lambda x: len(_re.findall(r'\d{8}', x)) > 0 and 'Thinking' not in x)
+        nums = _re.findall(r'\d{8}', xml)
+        if ok and nums:
+            r_prev = nums[-1]
+            if tap_text('Regenerate', timeout=10):
+                ok2, xml2 = poll_reply(lambda x: len(_re.findall(r'\d{8}', x)) > 0 and 'Thinking' not in x)
+                nums2 = _re.findall(r'\d{8}', xml2)
+                regen_ok = ok2 and len(nums2) > 0 and nums2[-1] != r_prev
+        assert_true('regenerate replaced reply with new content (mock)', regen_ok)
+        shot('p2-regenerate')
 
-    # === Section 2: RENAME + SEARCH (no AI needed) ===
-    fresh_conversation()
-    type_and_send('Search anchor phrase zebra')
-    time.sleep(4)   # user message stores immediately; reply not needed here
-    dismiss_keyboard()
-    if tap_text('Rename chat', timeout=10):
-        time.sleep(1)
-        if tap_edittext():
-            time.sleep(0.5)
-            clear_field_verified()
-            time.sleep(0.5)
-            type_text('Renamed chat')
-            time.sleep(1)
-            tap_text('Save', timeout=10)
-        assert_true('rename dialog closed', wait_gone('Rename conversation', timeout=12))
-    time.sleep(1)
-    xml = dump()
-    assert_text('Renamed chat', xml)
-    shot('p2-rename')
-    if tap_text('Search history', timeout=8):
-        time.sleep(1)
-        if tap_edittext():
-            time.sleep(0.5)
-            type_text('zebra')
-            time.sleep(3)
-    xml = dump()
-    assert_text('Open conversation', xml)
-    shot('p2-search')
-    dismiss_keyboard()
-    tap_text('Close', exact=True, timeout=5)
-    wait_gone('Search history', timeout=8)
-
-    # === Section 3: EDIT - MANGO fully replaced by PAPAYA proves truncation + new reply ===
-    fresh_conversation()
-    edit_ok = False
-    type_and_send('Reply with the word MANGO only.')
-    ok, xml = poll_reply(lambda x: x.lower().count('mango') >= 2 and 'Thinking' not in x)
-    if ok and tap_text('Edit', timeout=10):
-        time.sleep(1)
-        if tap_edittext():
-            time.sleep(0.5)
-            clear_field_verified()
-            time.sleep(0.5)
-            type_text('Reply with the word PAPAYA only.')
-            time.sleep(1)
-            tap_text('Save & resend', timeout=12)
-        if not wait_gone('Save & resend', timeout=12):
-            shot('p2-edit-dialog-stuck')
-            print('EDIT: dialog did not close'); sys.stdout.flush()
-        else:
-            ok2, xml2 = poll_reply(lambda x: x.lower().count('papaya') >= 2 and 'Thinking' not in x)
-            if ok2:
-                edit_ok = True
-                assert_true('old user text edited away', 'mango' not in xml2.lower())
-                assert_true('edited user text stored', has_exact_node(xml2, 'Reply with the word PAPAYA only.'))
-    assert_true('edit resend produced reply to new text (mock)', edit_ok)
-    shot('p2-edit')
-
-    # === Section 4: ATTACHMENTS - chip, send, answer names the color; oversize error ===
-    fresh_conversation()
-    filesA = set(list_app_files().split())
-    conv1_files = set()
-    attach_ok = False
-    if attach_file('nd_test_red.png'):
-        xml = dump()
-        assert_text('nd_test_red.png', xml)   # pending chip
-        type_and_send('What color is this image? One word.')
-        attach_ok, xml = poll_reply(lambda x: 'mock red' in x.lower())
-        assert_true('attachment answer names the color (mock)', attach_ok)
-        shot('p2-attachment')
-    filesB = set(list_app_files().split())
-    conv1_files = filesB - filesA
-    if PICKER['ok']:
-        assert_true('conv1 attachment file on disk', len(conv1_files) >= 1)
-    if attach_file('nd_test_big.png'):
-        xml = dump()
-        assert_text('File too large (about 7 MB max.)', xml)
-        shot('p2-attach-toolarge')
-        assert_true('oversize file not copied to storage', set(list_app_files().split()) == filesB)
-
-    # === Section 5: second stored conversation (preservation reference) ===
-    fresh_conversation()
-    if PICKER['ok'] and attach_file('nd_test_red.png'):
-        type_and_send('Hi')
-        time.sleep(20)
+    if want('rename'):
+        # === Section 2: RENAME + SEARCH (no AI needed) ===
+        fresh_conversation()
+        type_and_send('Search anchor phrase zebra')
+        time.sleep(4)   # user message stores immediately; reply not needed here
         dismiss_keyboard()
-    filesC = set(list_app_files().split())
-    conv2_files = filesC - filesB
-    if PICKER['ok']:
-        assert_true('conv2 attachment file on disk', len(conv2_files) >= 1)
-
-    # === Section 6: INCOGNITO - banner copy, zero disk writes, force-stop non-persistence ===
-    fresh_conversation()
-    tap_text('Incognito', timeout=8)
-    time.sleep(2)
-    xml = dump()
-    assert_text('Incognito: not saved to your chat history', xml)   # also proves mode is ON
-    assert_text('Replies still go through your secure backend.', xml)
-    shot('p2-incognito-banner')
-    if PICKER['ok']:
-        attach_file('nd_test_red.png')
-    type_and_send('Secret note test')
-    time.sleep(20)
-    dismiss_keyboard()
-    xml = dump()
-    assert_true('incognito message visible during session', has_exact_node(xml, 'Secret note test'))
-    shot('p2-incognito-on')
-    filesD = set(list_app_files().split())
-    if PICKER['ok']:
-        assert_true('incognito attachment never written to disk', len(filesD - filesC) == 0)
-    relaunch()   # force-stop + cold start WHILE incognito active
-    tap_nav('Chat')
-    time.sleep(3)
-    xml = dump()
-    assert_true('incognito text gone after force-stop restart', 'Secret note test' not in xml)
-    tap_text('Conversations', timeout=8)
-    time.sleep(2)
-    xml = dump()
-    assert_true('no incognito conversation in picker after restart', 'Secret note test' not in xml)
-    adb('shell', 'input', 'keyevent', '4')
-    time.sleep(1)
-    filesE = set(list_app_files().split())
-    if PICKER['ok']:
-        assert_true('no new files after incognito restart', len(filesE - filesC) == 0)
-        assert_true('normal conversation attachment preserved', len(conv2_files & filesE) == len(conv2_files) and len(conv2_files) > 0)
-    shot('p2-incognito-after-restart')
-
-    # === Section 7: delete conv1 -> only its attachment file removed ===
-    tap_text('Conversations', timeout=8)
-    time.sleep(2)
-    if not tap_text('What color is this image? One word.', timeout=8):  # conv1 title (its first message text)
-        adb('shell', 'input', 'keyevent', '4')
+        if tap_text('Rename chat', timeout=10):
+            time.sleep(1)
+            if tap_edittext():
+                time.sleep(0.5)
+                clear_field_verified()
+                time.sleep(0.5)
+                type_text('Renamed chat')
+                time.sleep(1)
+                tap_text('Save', timeout=10)
+            assert_true('rename dialog closed', wait_gone('Rename conversation', timeout=12))
         time.sleep(1)
-    time.sleep(1)
-    if tap_text('Delete chat', timeout=6):
-        time.sleep(3)
-    filesF = set(list_app_files().split())
-    if PICKER['ok']:
-        assert_true('deleted conversation attachment removed', len(conv1_files & filesF) == 0)
-        assert_true('other conversation attachment preserved after delete', len(conv2_files & filesF) == len(conv2_files))
-    shot('p2-delete-hygiene')
+        xml = dump()
+        assert_text('Renamed chat', xml)
+        shot('p2-rename')
+        if tap_text('Search history', timeout=8):
+            time.sleep(1)
+            if tap_edittext():
+                time.sleep(0.5)
+                type_text('zebra')
+                time.sleep(3)
+        xml = dump()
+        assert_text('Open conversation', xml)
+        shot('p2-search')
+        dismiss_keyboard()
+        tap_text('Close', exact=True, timeout=5)
+        wait_gone('Search history', timeout=8)
 
-    # === Section 8: error rendering - concise quota message + expandable detail (deterministic trigger) ===
-    fresh_conversation()
-    type_and_send('TRIGGER429 test')
-    ok, xml = poll_reply(lambda x: 'rate or quota limit' in x.lower())
-    assert_true('concise quota error shown', ok)
-    assert_true('no fixed retry-time promised', 'minute' not in xml.lower())
-    assert_true('raw JSON not dumped on screen', 'exceeded your current quota' not in xml)
-    if ok and tap_text('Technical details', timeout=6):
+    if want('edit'):
+        # === Section 3: EDIT - MANGO fully replaced by PAPAYA proves truncation + new reply ===
+        fresh_conversation()
+        edit_ok = False
+        type_and_send('Reply with the word MANGO only.')
+        ok, xml = poll_reply(lambda x: x.lower().count('mango') >= 2 and 'Thinking' not in x)
+        if ok and tap_text('Edit', timeout=10):
+            time.sleep(1)
+            if tap_edittext():
+                time.sleep(0.5)
+                clear_field_verified()
+                time.sleep(0.5)
+                type_text('Reply with the word PAPAYA only.')
+                time.sleep(1)
+                tap_text('Save & resend', timeout=12)
+            if not wait_gone('Save & resend', timeout=12):
+                shot('p2-edit-dialog-stuck')
+                print('EDIT: dialog did not close'); sys.stdout.flush()
+            else:
+                ok2, xml2 = poll_reply(lambda x: x.lower().count('papaya') >= 2 and 'Thinking' not in x)
+                if ok2:
+                    edit_ok = True
+                    assert_true('old user text edited away', 'mango' not in xml2.lower())
+                    assert_true('edited user text stored', has_exact_node(xml2, 'Reply with the word PAPAYA only.'))
+        assert_true('edit resend produced reply to new text (mock)', edit_ok)
+        shot('p2-edit')
+
+    if want('attachments'):
+        # === Section 4: ATTACHMENTS - chip, send, answer names the color; oversize error ===
+        fresh_conversation()
+        filesA = set(list_app_files().split())
+        conv1_files = set()
+        attach_ok = False
+        if attach_file('nd_test_red.png'):
+            xml = dump()
+            assert_text('nd_test_red.png', xml)   # pending chip
+            type_and_send('What color is this image? One word.')
+            attach_ok, xml = poll_reply(lambda x: 'mock red' in x.lower())
+            assert_true('attachment answer names the color (mock)', attach_ok)
+            shot('p2-attachment')
+        filesB = set(list_app_files().split())
+        conv1_files = filesB - filesA
+        if PICKER['ok']:
+            assert_true('conv1 attachment file on disk', len(conv1_files) >= 1)
+        if attach_file('nd_test_big.png'):
+            xml = dump()
+            assert_text('File too large (about 7 MB max.)', xml)
+            shot('p2-attach-toolarge')
+            assert_true('oversize file not copied to storage', set(list_app_files().split()) == filesB)
+
+    if want('conv2'):
+        # === Section 5: second stored conversation (preservation reference) ===
+        fresh_conversation()
+        if PICKER['ok'] and attach_file('nd_test_red.png'):
+            type_and_send('Hi')
+            time.sleep(20)
+            dismiss_keyboard()
+        filesC = set(list_app_files().split())
+        conv2_files = filesC - filesB
+        if PICKER['ok']:
+            assert_true('conv2 attachment file on disk', len(conv2_files) >= 1)
+
+    if want('incognito'):
+        # === Section 6: INCOGNITO - banner copy, zero disk writes, force-stop non-persistence ===
+        fresh_conversation()
+        tap_text('Incognito', timeout=8)
         time.sleep(2)
         xml = dump()
-        assert_text('gemini 429', xml)   # raw detail behind expansion
-    shot('p2-error-rendering')
+        assert_text('Incognito: not saved to your chat history', xml)   # also proves mode is ON
+        assert_text('Replies still go through your secure backend.', xml)
+        shot('p2-incognito-banner')
+        if PICKER['ok']:
+            attach_file('nd_test_red.png')
+        type_and_send('Secret note test')
+        time.sleep(20)
+        dismiss_keyboard()
+        xml = dump()
+        assert_true('incognito message visible during session', has_exact_node(xml, 'Secret note test'))
+        shot('p2-incognito-on')
+        filesD = set(list_app_files().split())
+        if PICKER['ok']:
+            assert_true('incognito attachment never written to disk', len(filesD - filesC) == 0)
+        relaunch()   # force-stop + cold start WHILE incognito active
+        tap_nav('Chat')
+        time.sleep(3)
+        xml = dump()
+        assert_true('incognito text gone after force-stop restart', 'Secret note test' not in xml)
+        tap_text('Conversations', timeout=8)
+        time.sleep(2)
+        xml = dump()
+        assert_true('no incognito conversation in picker after restart', 'Secret note test' not in xml)
+        adb('shell', 'input', 'keyevent', '4')
+        time.sleep(1)
+        filesE = set(list_app_files().split())
+        if PICKER['ok']:
+            assert_true('no new files after incognito restart', len(filesE - filesC) == 0)
+            assert_true('normal conversation attachment preserved', len(conv2_files & filesE) == len(conv2_files) and len(conv2_files) > 0)
+        shot('p2-incognito-after-restart')
+
+    if want('delete'):
+        # === Section 7: delete conv1 -> only its attachment file removed ===
+        tap_text('Conversations', timeout=8)
+        time.sleep(2)
+        if not tap_text('What color is this image? One word.', timeout=8):  # conv1 title (its first message text)
+            adb('shell', 'input', 'keyevent', '4')
+            time.sleep(1)
+        time.sleep(1)
+        if tap_text('Delete chat', timeout=6):
+            time.sleep(3)
+        filesF = set(list_app_files().split())
+        if PICKER['ok']:
+            assert_true('deleted conversation attachment removed', len(conv1_files & filesF) == 0)
+            assert_true('other conversation attachment preserved after delete', len(conv2_files & filesF) == len(conv2_files))
+        shot('p2-delete-hygiene')
+
+    if want('errors'):
+        # === Section 8: error rendering - concise quota message + expandable detail (deterministic trigger) ===
+        fresh_conversation()
+        type_and_send('TRIGGER429 test')
+        ok, xml = poll_reply(lambda x: 'rate or quota limit' in x.lower())
+        assert_true('concise quota error shown', ok)
+        assert_true('no fixed retry-time promised', 'minute' not in xml.lower())
+        assert_true('raw JSON not dumped on screen', 'exceeded your current quota' not in xml)
+        if ok and tap_text('Technical details', timeout=6):
+            time.sleep(2)
+            xml = dump()
+            assert_text('gemini 429', xml)   # raw detail behind expansion
+        shot('p2-error-rendering')
 
     print('PHASE2-COVERAGE picker=' + ('ok' if PICKER['ok'] else 'MISS'))
     sys.stdout.flush()
 
-# Voice tab
-dismiss_keyboard()
-tap_nav('Voice')
-time.sleep(4)
-shot('05-voice')
-xml = dump()
-assert_text('LIVE WITH', xml)
+if want('tail'):
 
-# Real TTS voice test -> speaking robot with mouth animation
-# Evidence: screenrecord video of the speaking animation + logcat timeline of
-# synthesis, envelope and playback-position/ampljectory pairs.
-adb('logcat', '-c')
-adb('shell', 'screenrecord', '--time-limit', '30', '/sdcard/max_voice.mp4', '&')
-time.sleep(1)
-if tap_text('Test MAX voice'):
-    speaking_seen = False
-    for _ in range(10):
-        xml = dump()
-        if 'SPEAKING' in xml:
-            speaking_seen = True
-            break
-        time.sleep(0.5)
-    print(('PASS ' if speaking_seen else 'FAIL ') + 'SPEAKING state observed'); sys.stdout.flush()
-    shot('06-voice-speaking')
+    # Voice tab
+    dismiss_keyboard()
+    tap_nav('Voice')
     time.sleep(4)
-    shot('07-voice-speaking-2')
-    time.sleep(5)
-    shot('08-voice-after')
-time.sleep(1)
-adb('shell', 'pkill', '-f', 'screenrecord')
-time.sleep(2)
-adb('pull', '/sdcard/max_voice.mp4', 'shots/max_voice.mp4')
-with open('shots/max_voice_logcat.txt', 'w') as f:
-    r = adb('logcat', '-d', '-s', 'MAX_VOICE:I')
-    f.write(r.stdout)
+    shot('05-voice')
+    xml = dump()
+    assert_text('LIVE WITH', xml)
 
-# Tools
-tap_nav('Tools')
-time.sleep(3)
-shot('09-tools')
-xml = dump()
-assert_text('Flashlight', xml)
-assert_text('Battery', xml)
+    # Real TTS voice test -> speaking robot with mouth animation
+    # Evidence: screenrecord video of the speaking animation + logcat timeline of
+    # synthesis, envelope and playback-position/ampljectory pairs.
+    adb('logcat', '-c')
+    adb('shell', 'screenrecord', '--time-limit', '30', '/sdcard/max_voice.mp4', '&')
+    time.sleep(1)
+    if tap_text('Test MAX voice'):
+        speaking_seen = False
+        for _ in range(10):
+            xml = dump()
+            if 'SPEAKING' in xml:
+                speaking_seen = True
+                break
+            time.sleep(0.5)
+        print(('PASS ' if speaking_seen else 'FAIL ') + 'SPEAKING state observed'); sys.stdout.flush()
+        shot('06-voice-speaking')
+        time.sleep(4)
+        shot('07-voice-speaking-2')
+        time.sleep(5)
+        shot('08-voice-after')
+    time.sleep(1)
+    adb('shell', 'pkill', '-f', 'screenrecord')
+    time.sleep(2)
+    adb('pull', '/sdcard/max_voice.mp4', 'shots/max_voice.mp4')
+    with open('shots/max_voice_logcat.txt', 'w') as f:
+        r = adb('logcat', '-d', '-s', 'MAX_VOICE:I')
+        f.write(r.stdout)
 
-# Settings
-tap_nav('Settings')
-time.sleep(3)
-shot('10-settings')
-xml = dump()
-assert_text('SECURE BACKEND', xml)
-assert_text('Test connection', xml)
+    # Tools
+    tap_nav('Tools')
+    time.sleep(3)
+    shot('09-tools')
+    xml = dump()
+    assert_text('Flashlight', xml)
+    assert_text('Battery', xml)
 
-print('DRIVE DONE')
+    # Settings
+    tap_nav('Settings')
+    time.sleep(3)
+    shot('10-settings')
+    xml = dump()
+    assert_text('SECURE BACKEND', xml)
+    assert_text('Test connection', xml)
+
+    print('DRIVE DONE')

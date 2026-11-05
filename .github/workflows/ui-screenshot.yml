@@ -2,6 +2,11 @@ name: UI screenshot check
 
 on:
   workflow_dispatch:
+    inputs:
+      sections:
+        description: 'Comma list: all,migration,core,regen,rename,edit,attachments,conv2,incognito,delete,errors,tail (smoke gate always runs)'
+        required: false
+        default: 'all'
 
 jobs:
   ui:
@@ -43,6 +48,7 @@ jobs:
           # separate, quota-gated batch). Replies are visibly prefixed "MOCK".
           ND_TEST_BACKEND_URL: http://10.0.2.2:8787
           ND_TEST_APP_TOKEN: ci-mock-token
+          ND_SECTIONS: ${{ inputs.sections || 'all' }}
         with:
           api-level: 34
           target: google_apis
