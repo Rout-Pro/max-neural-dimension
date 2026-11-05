@@ -51,6 +51,7 @@ jobs:
             adb install app/build/outputs/apk/debug/NeuralDimension-2.0.apk
             python3 tools/drive_ui.py
       - name: Upload screenshots
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nd-ui-shots

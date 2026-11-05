@@ -153,9 +153,12 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
             Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextButton(onClick = { menuOpen = true }) {
+            TextButton(onClick = { menuOpen = true }, modifier = Modifier.weight(1f, fill = false)) {
                 val title = conversations.firstOrNull { it.id == currentId }?.title ?: "New conversation"
-                Text(title.take(24), color = NdLavender, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    title.take(24), color = NdLavender, fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
                 Icon(Icons.Default.ArrowDropDown, contentDescription = "Conversations", tint = NdMuted)
             }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -168,7 +171,7 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
                     })
                 }
             }
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.weight(0.1f).width(4.dp))
             IconButton(onClick = { vm.newConversation() }) {
                 Icon(Icons.Default.Add, contentDescription = "New chat", tint = NdLavender)
             }

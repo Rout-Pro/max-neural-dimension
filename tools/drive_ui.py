@@ -425,19 +425,29 @@ if BACKEND_TEST:
     tap_text('Close', exact=True, timeout=4)
     time.sleep(1)
 
-    # REGENERATE: last assistant reply is replaced by a NEW random number
-    if tap_text('Regenerate', timeout=5):
-        time.sleep(28)
+    # REGENERATE: last assistant reply is replaced by a NEW random number (poll, never crash)
+    R2 = None
+    if tap_text('Regenerate', timeout=8):
+        deadline = time.time() + 80
+        while time.time() < deadline:
+            time.sleep(6)
+            xml = dump()
+            if 'Request failed' in xml:
+                break
+            if _re.findall(r'\d{8}', xml) and 'Thinking' not in xml:
+                break
     xml = dump()
     nums2 = _re.findall(r'\d{8}', xml)
-    assert_true('regenerate produced a reply', len(nums2) > 0)
-    assert_true('regenerate replaced the reply content', nums2[-1] != R1)
-    assert_true('regenerate without error', 'Request failed' not in xml)
-    R2 = nums2[-1]
+    ok = len(nums2) > 0 and nums2[-1] != R1 and 'Request failed' not in xml
+    assert_true('regenerate replaced reply with new content', ok)
+    if not ok:
+        shot('p2-regenerate-debug')
+    else:
+        R2 = nums2[-1]
     shot('p2-regenerate')
 
     # EDIT: user text changes AND the old reply is replaced by a reply to the new text
-    if tap_text('Edit', timeout=5):
+    if tap_text('Edit', timeout=8):
         time.sleep(1)
         if tap_edittext():
             time.sleep(0.5)
@@ -446,13 +456,21 @@ if BACKEND_TEST:
             type_text('Reply with the word MANGO only.')
             time.sleep(1)
             tap_text('Save & resend', timeout=4)
-        time.sleep(28)
+        deadline = time.time() + 80
+        while time.time() < deadline:
+            time.sleep(6)
+            xml = dump()
+            low = xml.lower()
+            if 'Request failed' in xml:
+                break
+            if low.count('mango') >= 2 and 'Thinking' not in xml:
+                break
     dismiss_keyboard()
     xml = dump()
     low = xml.lower()
     assert_text('Reply with the word MANGO only', xml)          # edited user text stored
     assert_true('old user text edited away', 'random 8 digit' not in xml)
-    assert_true('old reply replaced after edit', R2 not in xml)
+    assert_true('old reply replaced after edit', R2 is None or R2 not in xml)
     assert_true('reply to edited text present', low.count('mango') >= 2)  # user bubble + assistant reply
     assert_true('edit resend without error', 'Request failed' not in xml)
     shot('p2-edit')
