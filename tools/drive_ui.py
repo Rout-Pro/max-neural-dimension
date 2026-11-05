@@ -144,10 +144,18 @@ def set_field(label_prefix, value):
               '- got len', -1 if got is None else len(got), 'want', len(value)); sys.stdout.flush()
     return False
 
+def keyboard_shown():
+    r = adb('shell', 'dumpsys', 'input_method')
+    out = r.stdout or ''
+    return 'mInputShown=true' in out or 'mImeWindowVis=1' in out
+
 def dismiss_keyboard():
     # BACK collapses the IME without navigating when a keyboard is showing.
-    # Needed before bottom-nav taps: covered Compose nodes are still in the
-    # uiautomator tree, so a blind tap lands on a keyboard key instead.
+    # When no keyboard is showing, BACK navigates back and can finish the
+    # single-activity app - so only press it when the IME is actually up.
+    if not keyboard_shown():
+        print('dismiss_keyboard: no IME showing, skipping BACK'); sys.stdout.flush()
+        return
     adb('shell', 'input', 'keyevent', '4')
     time.sleep(1)
 
@@ -256,6 +264,7 @@ if BACKEND_TEST:
     # fresh messages until a real reply renders (max 3 extra attempts).
     for attempt in range(4):
         time.sleep(22)
+        shot('04b-chat-keyboard-open')
         dismiss_keyboard()
         time.sleep(1)
         shot('04-chat-reply')
