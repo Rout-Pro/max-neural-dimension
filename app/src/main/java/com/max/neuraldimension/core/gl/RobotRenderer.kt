@@ -197,7 +197,10 @@ void main() {
         buildStars()
     }
 
+    private var surfW = 1; private var surfH = 1
+
     override fun onSurfaceChanged(gl: GL10?, w: Int, h: Int) {
+        surfW = w; surfH = h
         GLES30.glViewport(0, 0, w, h)
         Matrix.perspectiveM(proj, 0, 41f, w.toFloat() / h.toFloat(), 0.1f, 100f)
     }
@@ -214,12 +217,15 @@ void main() {
         GLES30.glDepthMask(true)
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
 
+        camPos[1] = 0.25f; camPos[2] = 4.0f
+        Matrix.setLookAtM(view, 0, camPos[0], camPos[1], camPos[2], 0f, -0.02f, 0f, 0f, 1f, 0f)
         if (RobotState.compactBust) {
-            camPos[1] = 0.30f; camPos[2] = 4.6f
-            Matrix.setLookAtM(view, 0, camPos[0], camPos[1], camPos[2], 0f, -0.55f, 0f, 0f, 1f, 0f)
-        } else {
-            camPos[1] = 0.25f; camPos[2] = 4.0f
-            Matrix.setLookAtM(view, 0, camPos[0], camPos[1], camPos[2], 0f, -0.02f, 0f, 0f, 1f, 0f)
+            // Render the scene only into the top band of the surface: the robot can
+            // never draw over the dashboard panels below, and the aspect matches
+            // the voice screen's approved bust framing.
+            val vh = (surfH * 0.46f).toInt()
+            GLES30.glViewport(0, surfH - vh, surfW, vh)
+            Matrix.perspectiveM(proj, 0, 41f, surfW.toFloat() / vh.toFloat(), 0.1f, 100f)
         }
         Matrix.setIdentityM(model, 0)
         drawNode(root, model, transparentPass = false)

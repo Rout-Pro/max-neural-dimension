@@ -106,6 +106,44 @@ def tap_field_below(label_prefix, timeout=12):
     print('MISS field below', label_prefix); sys.stdout.flush()
     return False
 
+def field_text_below(label_prefix):
+    nodes = parse_nodes(dump())
+    labs = [n for n in nodes if n['text'].lower().startswith(label_prefix.lower())]
+    edits = [n for n in nodes if 'EditText' in n['cls']]
+    for l in labs:
+        cands = [e for e in edits if l['b'][1] - 10 <= e['b'][1] <= l['b'][3] + 220]
+        if cands:
+            return min(cands, key=lambda e: e['b'][1])['text']
+    return None
+
+def clear_field():
+    # CTRL+A then DEL, plus a DEL sweep as fallback.
+    adb('shell', 'input', 'keyevent', '--keycomb', '113', '29')
+    time.sleep(0.3)
+    adb('shell', 'input', 'keyevent', '67')
+    for _ in range(60):
+        adb('shell', 'input', 'keyevent', '67')
+
+def set_field(label_prefix, value):
+    # Type with verification; never prints the value or field contents.
+    for attempt in range(2):
+        if not tap_field_below(label_prefix):
+            return False
+        time.sleep(1)
+        clear_field()
+        time.sleep(0.5)
+        type_text(value)
+        time.sleep(1)
+        got = field_text_below(label_prefix)
+        # Password fields may expose only mask bullets to uiautomator.
+        masked_ok = got is not None and len(got) == len(value) and set(got) <= {'\u2022', '*', '.'}
+        if got == value or masked_ok:
+            print('field set+verified:', label_prefix, '(len', len(value), ')'); sys.stdout.flush()
+            return True
+        print('field MISMATCH after attempt', attempt + 1, 'for', label_prefix,
+              '- got len', -1 if got is None else len(got), 'want', len(value)); sys.stdout.flush()
+    return False
+
 def dismiss_keyboard():
     # BACK collapses the IME without navigating when a keyboard is showing.
     # Needed before bottom-nav taps: covered Compose nodes are still in the
@@ -152,14 +190,10 @@ if BACKEND_TEST:
     # GitHub Actions secrets -> env; never in repo or APK).
     tap_nav('Settings')
     time.sleep(3)
-    if tap_field_below('Backend URL'):
-        time.sleep(1)
-        type_text(BACKEND_URL)
-        time.sleep(1)
-    if tap_field_below('App token'):
-        time.sleep(1)
-        type_text(APP_TOKEN)
-        time.sleep(1)
+    ok_url = set_field('Backend URL', BACKEND_URL)
+    ok_tok = set_field('App token', APP_TOKEN)
+    if not (ok_url and ok_tok):
+        print('BACKEND FIELD SET FAILED')
     dismiss_keyboard()
     tap_text('Test connection', timeout=15)
     time.sleep(6)
