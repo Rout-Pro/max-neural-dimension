@@ -1,6 +1,7 @@
+package com.max.neuraldimension.features.chat
+
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
-package com.max.neuraldimension.features.chat
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
