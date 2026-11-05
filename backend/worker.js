@@ -84,26 +84,38 @@ async function chatGemini(env, messages, mode, system) {
   const model = mode === "thinking"
     ? (env.MODEL_THINKING || "gemini-3.6-flash")
     : (env.MODEL_FAST || "gemini-3.6-flash");
-  const upstream = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-goog-api-key": env.GEMINI_API_KEY,
-      },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
-        contents: messages.map((m) => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: String(m.content) }],
-        })),
-      }),
+  // Bounded retry on transient provider pressure (429/503): same pinned model,
+  // short backoff, then surface the error honestly. No model/billing change.
+  let upstream = null;
+  let detail = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    upstream = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-goog-api-key": env.GEMINI_API_KEY,
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: system }] },
+          contents: messages.map((m) => ({
+            role: m.role === "assistant" ? "model" : "user",
+            parts: [{ text: String(m.content) }],
+          })),
+        }),
+      }
+    );
+    if (upstream.ok && upstream.body) break;
+    detail = await upstream.text();
+    const transient = upstream.status === 429 || upstream.status === 503;
+    if (!transient || attempt === 2) {
+      return json({ error: `gemini ${upstream.status}: ${detail.slice(0, 300)}` }, 502);
     }
-  );
-  if (!upstream.ok || !upstream.body) {
-    const detail = await upstream.text();
-    return json({ error: `gemini ${upstream.status}: ${detail.slice(0, 300)}` }, 502);
+    await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+  }
+  if (!upstream || !upstream.ok || !upstream.body) {
+    return json({ error: "gemini unavailable after retries" }, 502);
   }
   return pump(upstream.body, (payload) => {
     try {
