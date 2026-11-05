@@ -82,7 +82,7 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
         pending?.let { vm.pendingChatText.value = null; vm.send(it) }
     }
     LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+        if (messages.isNotEmpty()) listState.animateScrollToItem(0)
     }
 
     Column(Modifier.fillMaxSize().background(NdBlack).statusBarsPadding().imePadding()) {
@@ -122,6 +122,7 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
         LazyColumn(
             state = listState,
             modifier = Modifier.weight(1f).fillMaxWidth(),
+            reverseLayout = true,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -142,7 +143,7 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
                     }
                 }
             }
-            items(messages, key = { it.id }) { m ->
+            items(messages.asReversed(), key = { it.id }) { m ->
                 MessageBubble(m, onCopy = { clipboard.setText(AnnotatedString(m.text)) }, onOpenSettings = onOpenSettings)
             }
             if (sending) {

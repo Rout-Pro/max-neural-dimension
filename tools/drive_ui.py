@@ -265,6 +265,8 @@ if BACKEND_TEST:
     for attempt in range(4):
         time.sleep(22)
         shot('04b-chat-keyboard-open')
+        with open('shots/chat_dump_kbopen.xml', 'w') as f:
+            f.write(dump('/tmp/ui_kbopen.xml'))
         dismiss_keyboard()
         time.sleep(1)
         shot('04-chat-reply')
@@ -306,16 +308,15 @@ adb('logcat', '-c')
 adb('shell', 'screenrecord', '--time-limit', '30', '/sdcard/max_voice.mp4', '&')
 time.sleep(1)
 if tap_text('Test MAX voice'):
-    time.sleep(3)
-    shot('06-voice-speaking')
     speaking_seen = False
-    for _ in range(8):
+    for _ in range(10):
         xml = dump()
         if 'SPEAKING' in xml:
             speaking_seen = True
             break
-        time.sleep(1)
+        time.sleep(0.5)
     print(('PASS ' if speaking_seen else 'FAIL ') + 'SPEAKING state observed'); sys.stdout.flush()
+    shot('06-voice-speaking')
     time.sleep(4)
     shot('07-voice-speaking-2')
     time.sleep(5)
