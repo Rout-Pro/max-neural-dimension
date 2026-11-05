@@ -229,19 +229,37 @@ tap_nav('Chat')
 time.sleep(3)
 xml = dump()
 assert_text('New conversation', xml)
-# focus input and type
-if tap_text('Message', timeout=6):
+sent = False
+for attempt in range(2):
+    if not tap_text('Message', timeout=6):
+        continue
     time.sleep(1)
     type_text('Hello MAX')
     time.sleep(1)
-    adb('shell', 'input', 'keyevent', '66')
-    time.sleep(1)
-    tap_text('Send', timeout=3)
-    time.sleep(4)
+    # verify the text actually landed in the field before sending
+    nodes = parse_nodes(dump())
+    edits = [n for n in nodes if 'EditText' in n['cls']]
+    got = edits[-1]['text'] if edits else ''
+    print('chat field len after typing:', len(got)); sys.stdout.flush()
+    if 'Hello MAX' in got:
+        if tap_text('Send', timeout=3):
+            sent = True
+            break
+    else:
+        print('chat field empty/mismatch - retry attempt', attempt + 1); sys.stdout.flush()
+        dismiss_keyboard()
+if not sent:
+    print('CHAT SEND FAILED'); sys.stdout.flush()
+time.sleep(4)
 if BACKEND_TEST:
     time.sleep(22)
     shot('04-chat-reply')
     xml = dump()
+    with open('shots/chat_dump.xml', 'w') as f:
+        f.write(xml)
+    print('chat has user bubble:', 'Hello MAX' in xml)
+    print('chat has setup card:', 'SETUP' in xml or 'not connected yet' in xml)
+    print('chat has error:', 'Request failed' in xml)
     print('chat screen after send:', 'BACKEND-REPLY-CHECK')
 else:
     shot('04-chat-setup-honest')
