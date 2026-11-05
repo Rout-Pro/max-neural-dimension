@@ -52,6 +52,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val sending = MutableStateFlow(false)
     val connectionTest = MutableStateFlow<String?>(null)
 
+    init {
+        // Attachment hygiene: remove copied attachment files no message references anymore.
+        // This covers incognito sessions killed mid-chat (process death skips toggle-off cleanup)
+        // while preserving every file still referenced by a stored conversation.
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                val referenced = db.chatDao().allAttachmentPaths().filterNotNull().toSet()
+                getApplication<Application>().filesDir.listFiles()
+                    ?.filter { it.name.startsWith("att_") && it.absolutePath !in referenced }
+                    ?.forEach { it.delete() }
+            }
+        }
+    }
+
     /** Part 13: incognito - in-memory only, never written to Room. */
     val incognito = MutableStateFlow(false)
     val incognitoMessages = MutableStateFlow<List<Message>>(emptyList())

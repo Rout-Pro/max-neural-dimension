@@ -74,6 +74,9 @@ interface ChatDao {
 
     @Query("SELECT * FROM messages WHERE text LIKE '%' || :q || '%' ORDER BY ts DESC LIMIT 50")
     suspend fun search(q: String): List<Message>
+
+    @Query("SELECT attachmentPath FROM messages WHERE attachmentPath IS NOT NULL")
+    suspend fun allAttachmentPaths(): List<String?>
 }
 
 @Dao

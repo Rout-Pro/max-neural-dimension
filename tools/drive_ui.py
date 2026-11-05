@@ -361,7 +361,41 @@ else:
     assert_text('Secure backend is not connected yet', xml)
 
 # ---------- Phase 2 features (rename / search / edit / regenerate / incognito / attachments) ----------
+import re as _re
+PICKER = {'ok': True}
+def attach_file(fname, timeout=10):
+    """Drive the real DocumentsUI picker; returns False (and marks coverage) if the tap misses."""
+    if not tap_text('Attach image, PDF or text file', timeout=6):
+        PICKER['ok'] = False
+        print('PICKER-MISS: attach button not found'); sys.stdout.flush()
+        return False
+    time.sleep(4)
+    if not tap_text(fname, timeout=timeout):
+        PICKER['ok'] = False
+        print('PICKER-MISS: ' + fname + ' not tappable in DocumentsUI'); sys.stdout.flush()
+        shot('p2-picker-miss-' + fname)
+        adb('shell', 'input', 'keyevent', '4')
+        time.sleep(1)
+        return False
+    time.sleep(3)
+    return True
+
 if BACKEND_TEST:
+    # deterministic conversation: random-number reply gives provable content replacement
+    tap_text('New chat', timeout=6)
+    time.sleep(1)
+    if tap_text('Message', timeout=8):
+        time.sleep(1)
+        type_text('Reply with a random 8 digit number only.')
+        time.sleep(1)
+        tap_text('Send', timeout=3)
+    time.sleep(28)
+    dismiss_keyboard()
+    xml = dump()
+    nums = _re.findall(r'\d{8}', xml)
+    assert_true('assistant replied with an 8-digit number', len(nums) > 0)
+    R1 = nums[-1]
+
     # RENAME: header edit icon -> dialog -> save -> header shows new title
     if tap_text('Rename chat', timeout=5):
         time.sleep(1)
@@ -377,12 +411,12 @@ if BACKEND_TEST:
     assert_text('Renamed chat', xml)
     shot('p2-rename')
 
-    # SEARCH: header search icon -> type -> result row appears
+    # SEARCH: query hits the user message, result row offers to open it
     if tap_text('Search history', timeout=5):
         time.sleep(1)
         if tap_edittext():
             time.sleep(0.5)
-            type_text('Hello')
+            type_text('random')
             time.sleep(3)
     xml = dump()
     assert_text('Open conversation', xml)
@@ -391,114 +425,140 @@ if BACKEND_TEST:
     tap_text('Close', exact=True, timeout=4)
     time.sleep(1)
 
-    # EDIT: edit icon on the user bubble -> change text -> Save & resend
+    # REGENERATE: last assistant reply is replaced by a NEW random number
+    if tap_text('Regenerate', timeout=5):
+        time.sleep(28)
+    xml = dump()
+    nums2 = _re.findall(r'\d{8}', xml)
+    assert_true('regenerate produced a reply', len(nums2) > 0)
+    assert_true('regenerate replaced the reply content', nums2[-1] != R1)
+    assert_true('regenerate without error', 'Request failed' not in xml)
+    R2 = nums2[-1]
+    shot('p2-regenerate')
+
+    # EDIT: user text changes AND the old reply is replaced by a reply to the new text
     if tap_text('Edit', timeout=5):
         time.sleep(1)
         if tap_edittext():
             time.sleep(0.5)
             clear_field()
             time.sleep(0.5)
-            type_text('Hello MAX edited')
+            type_text('Reply with the word MANGO only.')
             time.sleep(1)
             tap_text('Save & resend', timeout=4)
         time.sleep(28)
     dismiss_keyboard()
     xml = dump()
-    assert_text('Hello MAX edited', xml)
-    assert_true('edit got a fresh reply without error', 'Request failed' not in xml)
+    low = xml.lower()
+    assert_text('Reply with the word MANGO only', xml)          # edited user text stored
+    assert_true('old user text edited away', 'random 8 digit' not in xml)
+    assert_true('old reply replaced after edit', R2 not in xml)
+    assert_true('reply to edited text present', low.count('mango') >= 2)  # user bubble + assistant reply
+    assert_true('edit resend without error', 'Request failed' not in xml)
     shot('p2-edit')
 
-    # REGENERATE: refresh icon on the last assistant bubble -> new reply, no error
-    if tap_text('Regenerate', timeout=5):
-        time.sleep(28)
-    xml = dump()
-    assert_true('regenerate produced a reply without error', 'Request failed' not in xml)
-    shot('p2-regenerate')
+    # ATTACHMENT limit is 7,000,000 bytes in code; visible error "File too large (about 7 MB max.)"
+    import base64 as _b64
+    png = _b64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+    with open('/tmp/nd_test_red.png', 'wb') as f:
+        f.write(png)
+    with open('/tmp/nd_test_big.png', 'wb') as f:
+        f.write(png)
+        f.write(b'\0' * 8_500_000)   # 8.5MB > 7MB limit
+    for fn in ('nd_test_red.png', 'nd_test_big.png'):
+        adb('push', '/tmp/' + fn, '/sdcard/Download/' + fn)
+        adb('shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', 'file:///sdcard/Download/' + fn)
+    time.sleep(3)
 
-    # INCOGNITO: toggle on -> send -> visible; toggle off -> gone; restart -> still gone
-    if tap_text('Incognito', timeout=5):
-        time.sleep(1)
+    # conv1 ("Renamed chat"): attach + visual question -> reply must identify the red image
+    filesA = set(list_app_files().split())
+    if attach_file('nd_test_red.png'):
+        xml = dump()
+        assert_text('nd_test_red.png', xml)   # pending chip
         if tap_text('Message', timeout=6):
             time.sleep(1)
-            type_text('Secret note test')
+            type_text('What color is this image? One word.')
             time.sleep(1)
             tap_text('Send', timeout=3)
-        time.sleep(24)
+        time.sleep(30)
         dismiss_keyboard()
         xml = dump()
-        assert_text('Secret note test', xml)
-        shot('p2-incognito-on')
-        tap_text('Incognito', timeout=5)
-        time.sleep(2)
+        assert_true('attachment answer identifies red image', 'red' in xml.lower())
+        assert_true('attachment send without error', 'Request failed' not in xml)
+        shot('p2-attachment')
+    filesB = set(list_app_files().split())
+    conv1_files = filesB - filesA
+    if PICKER['ok']:
+        assert_true('conv1 attachment file on disk', len(conv1_files) == 1)
+
+    # too-large file -> exact visible error, no file created
+    if attach_file('nd_test_big.png'):
         xml = dump()
-        assert_true('incognito cleared on toggle off', 'Secret note test' not in xml)
-    relaunch()
+        assert_text('File too large (about 7 MB max.)', xml)
+        shot('p2-attach-toolarge')
+        assert_true('oversize file not copied to storage', set(list_app_files().split()) == filesB)
+
+    # conv2: second conversation with its own attachment (preservation reference)
+    tap_text('New chat', timeout=6)
+    time.sleep(1)
+    if PICKER['ok'] and attach_file('nd_test_red.png'):
+        if tap_text('Message', timeout=6):
+            time.sleep(1)
+            type_text('Hi')
+            time.sleep(1)
+            tap_text('Send', timeout=3)
+        time.sleep(26)
+        dismiss_keyboard()
+        xml = dump()
+        assert_true('conv2 reply without error', 'Request failed' not in xml)
+    filesC = set(list_app_files().split())
+    conv2_files = filesC - filesB
+
+    # INCOGNITO with an attachment, then FORCE-STOP mid-session (hardest leak case)
+    tap_text('Incognito', timeout=5)
+    time.sleep(1)
+    if PICKER['ok'] and attach_file('nd_test_red.png'):
+        pass
+    if tap_text('Message', timeout=6):
+        time.sleep(1)
+        type_text('Secret note test')
+        time.sleep(1)
+        tap_text('Send', timeout=3)
+    time.sleep(26)
+    dismiss_keyboard()
+    xml = dump()
+    assert_text('Secret note test', xml)
+    shot('p2-incognito-on')
+    filesD = set(list_app_files().split())
+    inc_files = filesD - filesC
+    relaunch()   # force-stop + cold start while incognito was active
     tap_nav('Chat')
     time.sleep(3)
-    tap_text('New conversation', timeout=6)
+    tap_text('Conversations', timeout=6)   # open the conversation list
     time.sleep(2)
     xml = dump()
-    assert_true('incognito not persisted after restart', 'Secret note test' not in xml)
-    tap_text('Migration seed note', timeout=6)  # reopen the real conversation
-    time.sleep(2)
+    assert_true('incognito conversation not persisted after force-stop', 'Secret note test' not in xml)
+    adb('shell', 'input', 'keyevent', '4')  # close dropdown
+    time.sleep(1)
+    filesE = set(list_app_files().split())
+    if PICKER['ok']:
+        assert_true('incognito attachment file removed after force-stop restart', len(inc_files & filesE) == 0)
+        assert_true('normal conversation attachment preserved', len(conv2_files & filesE) == len(conv2_files) and len(conv2_files) > 0)
+    shot('p2-incognito-after-restart')
 
-    # ATTACHMENTS: picker -> png -> chip -> send with image -> real visual answer
-    import base64 as _b64
-    with open('/tmp/nd_test_red.png', 'wb') as f:
-        f.write(_b64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='))
-    with open('/tmp/nd_test_big.png', 'wb') as f:
-        f.write(_b64.b64decode('iVBORw0KGgoAAAABAAEABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==') if False else open('/tmp/nd_test_red.png','rb').read())
-        f.write(b'\0' * 8_500_000)
-    adb('push', '/tmp/nd_test_red.png', '/sdcard/Download/nd_test_red.png')
-    adb('push', '/tmp/nd_test_big.png', '/sdcard/Download/nd_test_big.png')
-    adb('shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', 'file:///sdcard/Download/nd_test_red.png')
-    adb('shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', 'file:///sdcard/Download/nd_test_big.png')
-    time.sleep(3)
-    if tap_text('Attach image, PDF or text file', timeout=5):
-        time.sleep(4)
-        if tap_text('nd_test_red.png', timeout=10):
-            time.sleep(3)
-            xml = dump()
-            assert_text('nd_test_red.png', xml)  # pending chip
-            if tap_text('Message', timeout=6):
-                time.sleep(1)
-                type_text('What color is this image? One word.')
-                time.sleep(1)
-                tap_text('Send', timeout=3)
-            time.sleep(30)
-            dismiss_keyboard()
-            xml = dump()
-            assert_true('attachment answer without error', 'Request failed' not in xml)
-            shot('p2-attachment')
-        else:
-            print('ATTACH: picker automation missed the file (system DocumentsUI)'); sys.stdout.flush()
-            adb('shell', 'input', 'keyevent', '4')
-            time.sleep(1)
-    # too-large file -> honest error chip
-    if tap_text('Attach image, PDF or text file', timeout=5):
-        time.sleep(4)
-        if tap_text('nd_test_big.png', timeout=10):
-            time.sleep(3)
-            xml = dump()
-            assert_text('too large', xml)
-            shot('p2-attach-toolarge')
-        else:
-            print('ATTACH: picker automation missed the big file'); sys.stdout.flush()
-            adb('shell', 'input', 'keyevent', '4')
-            time.sleep(1)
-
-    # Attachment file hygiene: deleting the conversation removes att_* files from disk
-    files_before = list_app_files()
-    print('app files before delete:', files_before.replace('\n', ' ')[:120]); sys.stdout.flush()
-    tap_text('Conversations', timeout=6)  # header dropdown icon
+    # delete conv1 -> its attachment file gone, conv2's untouched
+    tap_text('Conversations', timeout=6)
     time.sleep(2)
-    tap_text('Migration seed note', timeout=6)
+    tap_text('Renamed chat', timeout=6)
     time.sleep(2)
     if tap_text('Delete chat', timeout=5):
         time.sleep(3)
-    files_after = list_app_files()
-    att_left = [f for f in files_after.split() if f.startswith('att_')]
-    assert_true('attachment files removed with conversation', len(att_left) == 0)
+    filesF = set(list_app_files().split())
+    if PICKER['ok']:
+        assert_true('deleted conversation attachment removed', len(conv1_files & filesF) == 0)
+        assert_true('other conversation attachment preserved after delete', len(conv2_files & filesF) == len(conv2_files))
+    print('PHASE2-COVERAGE picker=' + ('ok' if PICKER['ok'] else 'MISS'))
+    sys.stdout.flush()
 
 # Voice tab
 dismiss_keyboard()
