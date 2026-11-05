@@ -252,15 +252,29 @@ if not sent:
     print('CHAT SEND FAILED'); sys.stdout.flush()
 time.sleep(4)
 if BACKEND_TEST:
-    time.sleep(22)
-    shot('04-chat-reply')
-    xml = dump()
-    with open('shots/chat_dump.xml', 'w') as f:
-        f.write(xml)
-    print('chat has user bubble:', 'Hello MAX' in xml)
-    print('chat has setup card:', 'SETUP' in xml or 'not connected yet' in xml)
-    print('chat has error:', 'Request failed' in xml)
-    print('chat screen after send:', 'BACKEND-REPLY-CHECK')
+    # Provider free tier occasionally returns 503 "high demand"; retry with
+    # fresh messages until a real reply renders (max 3 extra attempts).
+    for attempt in range(4):
+        time.sleep(22)
+        shot('04-chat-reply')
+        xml = dump()
+        with open('shots/chat_dump.xml', 'w') as f:
+            f.write(xml)
+        print('chat has user bubble:', 'Hello MAX' in xml)
+        print('chat has setup card:', 'SETUP' in xml or 'not connected yet' in xml)
+        print('chat has error:', 'Request failed' in xml)
+        print('chat screen after send:', 'BACKEND-REPLY-CHECK')
+        if 'Request failed' not in xml:
+            break
+        if attempt == 3:
+            print('CHAT REPLY STILL FAILING after retries')
+            break
+        time.sleep(20)
+        if tap_text('Message', timeout=6):
+            time.sleep(1)
+            type_text('Say MAX online')
+            time.sleep(1)
+            tap_text('Send', timeout=3)
 else:
     shot('04-chat-setup-honest')
     xml = dump()
