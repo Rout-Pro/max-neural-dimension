@@ -68,6 +68,12 @@ def launch():
     adb('shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1')
     time.sleep(6)
     settle()
+    # Home sometimes shows the Quick Actions dialog; it covers the nav bar and
+    # its rows substring-match nav labels. Dismiss before driving further.
+    xml = dump()
+    if 'Quick Actions' in xml:
+        tap_text('Close', timeout=3, exact=True)
+        time.sleep(1)
 
 def tap_text(t, timeout=15, exact=False):
     deadline = time.time() + timeout
@@ -126,7 +132,7 @@ def fail(msg):
 
 if MODE == 'seed':
     launch()
-    tap_text('Settings') or fail('Settings tab')
+    tap_text('Settings', exact=True) or fail('Settings tab')
     time.sleep(2)
     # Settings is a scrollable column; the SECURE BACKEND section is near the top.
     tap_below('Backend URL') or fail('Backend URL label')
@@ -140,7 +146,7 @@ if MODE == 'seed':
         dismiss_keyboard()
     poll_text(SEED_URL, 8) or fail('backend URL not entered')
     shot('seed-settings')
-    tap_text('Chat') or fail('Chat tab')
+    tap_text('Chat', exact=True) or fail('Chat tab')
     time.sleep(2)
     tap_text('Message MAX', timeout=20) or fail('chat input')
     type_text(SEED_MSG)
@@ -152,10 +158,10 @@ if MODE == 'seed':
 elif MODE == 'verify':
     adb('shell', 'am', 'force-stop', PKG)
     launch()
-    tap_text('Chat') or fail('Chat tab')
+    tap_text('Chat', exact=True) or fail('Chat tab')
     poll_text(SEED_MSG, 40) or fail('seeded message missing after in-place upgrade')
     shot('upgraded-chat')
-    tap_text('Settings') or fail('Settings tab')
+    tap_text('Settings', exact=True) or fail('Settings tab')
     poll_text(SEED_URL, 25) or fail('seeded backend URL missing after in-place upgrade')
     shot('upgraded-settings')
     print('UPGRADE VERIFY PASS'); sys.stdout.flush()
