@@ -4,5 +4,5 @@ compatibility_date = "2026-01-01"
 
 [vars]
 PROVIDER = "gemini"
-MODEL_FAST = "gemini-2.0-flash"
-MODEL_THINKING = "gemini-2.5-flash"
+MODEL_FAST = "gemini-flash-latest"
+MODEL_THINKING = "gemini-3.8-flash"
