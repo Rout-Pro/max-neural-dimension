@@ -17,8 +17,8 @@
  * Vars (wrangler.toml):
  *   PROVIDER         "gemini" (default) | "openai"
  *   OPENAI_BASE_URL  default https://api.openai.com/v1 (works for Groq: https://api.groq.com/openai/v1)
- *   MODEL_FAST       default gemini-flash-latest
- *   MODEL_THINKING   default gemini-3.8-flash
+ *   MODEL_FAST       default gemini-3.6-flash
+ *   MODEL_THINKING   default gemini-3.6-flash
  */
 
 export default {
@@ -82,8 +82,8 @@ async function handleChat(request, env) {
 async function chatGemini(env, messages, mode, system) {
   if (!env.GEMINI_API_KEY) return json({ error: "GEMINI_API_KEY not set on backend" }, 500);
   const model = mode === "thinking"
-    ? (env.MODEL_THINKING || "gemini-3.8-flash")
-    : (env.MODEL_FAST || "gemini-flash-latest");
+    ? (env.MODEL_THINKING || "gemini-3.6-flash")
+    : (env.MODEL_FAST || "gemini-3.6-flash");
   const upstream = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,
     {
