@@ -448,7 +448,7 @@ if BACKEND_TEST and want('core'):
             type_text('Say MAX online')
             time.sleep(1)
             tap_text('Send', timeout=3)
-else:
+elif not BACKEND_TEST:
     shot('04-chat-setup-honest')
     xml = dump()
     assert_text('Secure backend is not connected yet', xml)
@@ -655,8 +655,15 @@ if BACKEND_TEST:
         if PICKER['ok']:
             assert_true('conv1 attachment file on disk', len(conv1_files) >= 1)
         if attach_file('nd_test_big.png'):
-            xml = dump()
-            assert_text('File too large (about 7 MB max.)', xml)
+            _tl_ok = False
+            _dl = time.time() + 20
+            while time.time() < _dl:
+                xml = dump()
+                if 'File too large (about 7 MB max.)' in xml:
+                    _tl_ok = True
+                    break
+                time.sleep(1)
+            assert_true('oversize error text shown', _tl_ok)
             shot('p2-attach-toolarge')
             assert_true('oversize file not copied to storage', set(list_app_files().split()) == filesB)
 
@@ -713,7 +720,7 @@ if BACKEND_TEST:
         # === Section 7: delete conv1 -> only its attachment file removed ===
         tap_text('Conversations', timeout=8)
         time.sleep(2)
-        if not tap_text('What color is this image? One word.', timeout=8):  # conv1 title (its first message text)
+        if not tap_text('What color is this image', timeout=8):  # conv1 title (its first message text)
             adb('shell', 'input', 'keyevent', '4')
             time.sleep(1)
         time.sleep(1)
