@@ -27,6 +27,10 @@ def dump(path='/tmp/ui.xml'):
 def tap(x, y):
     adb('shell', 'input', 'tap', str(x), str(y))
 
+def unesc(t):
+    return (t.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>')
+             .replace('&quot;', '"').replace('&apos;', "'"))
+
 def tap_text(t, timeout=12, exact=False):
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -39,9 +43,9 @@ def tap_text(t, timeout=12, exact=False):
                 continue
             labels = []
             if tm and tm.group(1):
-                labels.append(tm.group(1))
+                labels.append(unesc(tm.group(1)))
             if cm and cm.group(1):
-                labels.append(cm.group(1))
+                labels.append(unesc(cm.group(1)))
             hit = False
             for txt in labels:
                 if (exact and txt == t) or (not exact and t.lower() in txt.lower()):
@@ -78,7 +82,7 @@ def parse_nodes(xml):
         bm = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', raw)
         if not bm:
             continue
-        nodes.append({'text': tm.group(1) if tm else '', 'desc': cm.group(1) if cm else '',
+        nodes.append({'text': unesc(tm.group(1)) if tm else '', 'desc': unesc(cm.group(1)) if cm else '',
                       'cls': cl.group(1) if cl else '',
                       'b': tuple(int(bm.group(i)) for i in range(1, 5))})
     return nodes
@@ -128,12 +132,15 @@ def clear_field_verified():
     return False
 
 def clear_field():
-    # CTRL+A then DEL, plus a DEL sweep as fallback.
+    # CTRL+A then DEL, plus MOVE_HOME + forward/backward DEL sweeps as fallback.
     adb('shell', 'input', 'keyevent', '--keycomb', '113', '29')
     time.sleep(0.3)
     adb('shell', 'input', 'keyevent', '67')
+    adb('shell', 'input', 'keyevent', '123')   # MOVE_HOME
     for _ in range(60):
-        adb('shell', 'input', 'keyevent', '67')
+        adb('shell', 'input', 'keyevent', '112')  # FORWARD_DEL
+    for _ in range(60):
+        adb('shell', 'input', 'keyevent', '67')   # DEL (backward)
 
 def set_field(label_prefix, value):
     # Type with verification; never prints the value or field contents.
@@ -179,6 +186,16 @@ def dismiss_anr():
             print('dismissed ANR dialog via Wait'); sys.stdout.flush()
             time.sleep(2)
             return True
+    return False
+
+def ensure_app_visible():
+    for _ in range(4):
+        r = adb('shell', 'dumpsys', 'window', 'displays')
+        if 'com.max.neuraldimension' in (r.stdout or ''):
+            return True
+        adb('shell', 'input', 'keyevent', '4')
+        time.sleep(1)
+    print('RECOVER: app not visible after BACK x4'); sys.stdout.flush()
     return False
 
 def close_dropdown_if_open():
@@ -441,6 +458,7 @@ def poll_reply(ok_fn, budget=60):
     return False, dump()
 
 def fresh_conversation():
+    ensure_app_visible()
     tap_nav('Chat')
     time.sleep(2)
     tap_text('New chat', timeout=8)
@@ -469,7 +487,7 @@ def attach_file(fname, timeout=15):
         PICKER['ok'] = False
         print('PICKER-MISS: attach button not found'); sys.stdout.flush()
         shot('p2-picker-miss-button')
-        adb('shell', 'input', 'keyevent', '4')
+        ensure_app_visible()
         time.sleep(1)
         return False
     time.sleep(4)
@@ -478,7 +496,7 @@ def attach_file(fname, timeout=15):
         PICKER['ok'] = False
         print('PICKER-MISS: ' + fname + ' not found in DocumentsUI'); sys.stdout.flush()
         shot('p2-picker-miss-' + fname)
-        adb('shell', 'input', 'keyevent', '4')
+        ensure_app_visible()
         time.sleep(1)
         return False
     time.sleep(2)
@@ -487,15 +505,13 @@ def attach_file(fname, timeout=15):
         time.sleep(2)
         long_press_text(fname, timeout=6)
         time.sleep(2)
-    if not tap_text('Select', timeout=6):
-        # some builds select directly on long-press release; check for the checkmark state
-        if not tap_text(fname + ' selected', timeout=2) and not tap_text('Select', exact=True, timeout=3):
-            PICKER['ok'] = False
-            print('PICKER-MISS: no Select control after long-press'); sys.stdout.flush()
-            shot('p2-picker-miss-select')
-            adb('shell', 'input', 'keyevent', '4')
-            time.sleep(1)
-            return False
+    if not tap_text('Select', exact=True, timeout=6):
+        PICKER['ok'] = False
+        print('PICKER-MISS: no Select control after long-press'); sys.stdout.flush()
+        shot('p2-picker-miss-select')
+        ensure_app_visible()
+        time.sleep(1)
+        return False
     time.sleep(3)
     return True
 

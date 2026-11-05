@@ -1,6 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Debug-only: let the CI emulator reach the mock backend on the host
-         (10.0.2.2 / 127.0.0.1) over plain HTTP. Release manifest keeps
-         usesCleartextTraffic="false" and ships no networkSecurityConfig. -->
-    <application android:networkSecurityConfig="${netSec}" />
+    <!-- Debug-only (CI UI tests): reach the mock backend on the emulator host
+         over plain HTTP. The distributed release APK never sees this. -->
+    <application android:networkSecurityConfig="@xml/nd_debug_network" />
 </manifest>

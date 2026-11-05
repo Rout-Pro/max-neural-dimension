@@ -17,11 +17,7 @@ android {
         versionName = "2.0"
         // CI-only UI-test hook. The distributed APK (Build workflow) is compiled
         // without -PND_TEST_HOOK, so the hook is absent from what users install.
-        val testHook = (project.findProperty("ND_TEST_HOOK") as String?) ?: "false"
-        buildConfigField("boolean", "ND_TEST_HOOK", testHook)
-        // Mock-backend cleartext only when the CI hook is compiled in; the Build
-        // workflow (distributed APK) gets the strict config - HTTPS-only.
-        manifestPlaceholders["netSec"] = if (testHook == "true") "@xml/nd_debug_network" else "@xml/nd_strict_network"
+        buildConfigField("boolean", "ND_TEST_HOOK", (project.findProperty("ND_TEST_HOOK") as String?) ?: "false")
     }
 
     buildFeatures {
