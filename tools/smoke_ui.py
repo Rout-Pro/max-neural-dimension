@@ -25,7 +25,7 @@ def dump(path='/tmp/ui.xml'):
             time.sleep(2)
     return ''
 
-def find_node(xml, t):
+def find_node(xml, t, exact=False):
     for raw in xml.split('<node'):
         tm = re.search(r'text="([^"]*)"', raw)
         cm = re.search(r'content-desc="([^"]*)"', raw)
@@ -33,17 +33,17 @@ def find_node(xml, t):
         if not bm:
             continue
         for g in (tm, cm):
-            if g and g.group(1) and t.lower() in g.group(1).lower():
+            if g and g.group(1) and ((exact and g.group(1) == t) or (not exact and t.lower() in g.group(1).lower())):
                 return tuple(int(bm.group(i)) for i in (1, 2, 3, 4))
     return None
 
 def tap(x, y):
     adb('shell', 'input', 'tap', str(x), str(y))
 
-def tap_text(t, timeout=10):
+def tap_text(t, timeout=10, exact=False):
     deadline = time.time() + timeout
     while time.time() < deadline:
-        b = find_node(dump(), t)
+        b = find_node(dump(), t, exact)
         if b:
             tap((b[0] + b[2]) // 2, (b[1] + b[3]) // 2)
             print('tapped', t); sys.stdout.flush()
@@ -94,7 +94,11 @@ time.sleep(8)
 if not settle(60):
     env_blocked('hook-launch')
 
-if not tap_text('Chat', timeout=15):
+xml = dump()
+if 'Quick Actions' in xml:
+    tap_text('Close', timeout=3, exact=True)
+    time.sleep(1)
+if not tap_text('Chat', timeout=15, exact=True):
     shot('smoke-no-chat'); print('SMOKE-FAIL: Chat nav missing'); sys.exit(1)
 time.sleep(2)
 if not tap_text('Message MAX', timeout=20):
