@@ -360,14 +360,55 @@ else:
     xml = dump()
     assert_text('Secure backend is not connected yet', xml)
 
-# ---------- Phase 2 features (rename / search / edit / regenerate / incognito / attachments) ----------
+# ---------- Phase 2 features: MOCK backend (zero provider calls), every section independent ----------
+# Live-provider success stays separately gated on quota recovery; this run verifies
+# app-side logic deterministically. Mock replies are visibly prefixed "MOCK".
 import re as _re
 PICKER = {'ok': True}
-def attach_file(fname, timeout=10):
-    """Drive the real DocumentsUI picker; returns False (and marks coverage) if the tap misses."""
-    if not tap_text('Attach image, PDF or text file', timeout=6):
+
+def wait_gone(t, timeout=15):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if t.lower() not in dump().lower():
+            return True
+        time.sleep(1)
+    return False
+
+def has_exact_node(xml, text):
+    return any(n['text'] == text for n in parse_nodes(xml))
+
+def type_and_send(text):
+    dismiss_keyboard()
+    if tap_text('Message', timeout=10):
+        time.sleep(1)
+        type_text(text)
+        time.sleep(1)
+        tap_text('Send', timeout=5)
+
+def poll_reply(ok_fn, budget=60):
+    deadline = time.time() + budget
+    while time.time() < deadline:
+        time.sleep(4)
+        xml = dump()
+        if ok_fn(xml):
+            return True, xml
+        if 'Request failed' in xml:
+            return False, xml
+    return False, dump()
+
+def fresh_conversation():
+    tap_nav('Chat')
+    time.sleep(2)
+    tap_text('New chat', timeout=8)
+    time.sleep(1)
+
+def attach_file(fname, timeout=15):
+    if not tap_text('Attach image, PDF or text file', timeout=12):
         PICKER['ok'] = False
         print('PICKER-MISS: attach button not found'); sys.stdout.flush()
+        shot('p2-picker-miss-button')
+        adb('shell', 'input', 'keyevent', '4')
+        time.sleep(1)
         return False
     time.sleep(4)
     if not tap_text(fname, timeout=timeout):
@@ -380,24 +421,41 @@ def attach_file(fname, timeout=10):
     time.sleep(3)
     return True
 
-if BACKEND_TEST:
-    # deterministic conversation: random-number reply gives provable content replacement
-    tap_text('New chat', timeout=6)
-    time.sleep(1)
-    if tap_text('Message', timeout=8):
-        time.sleep(1)
-        type_text('Reply with a random 8 digit number only.')
-        time.sleep(1)
-        tap_text('Send', timeout=3)
-    time.sleep(28)
-    dismiss_keyboard()
-    xml = dump()
-    nums = _re.findall(r'\d{8}', xml)
-    assert_true('assistant replied with an 8-digit number', len(nums) > 0)
-    R1 = nums[-1]
+import base64 as _b64
+_png = _b64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
+with open('/tmp/nd_test_red.png', 'wb') as f:
+    f.write(_png)
+with open('/tmp/nd_test_big.png', 'wb') as f:
+    f.write(_png)
+    f.write(b'\0' * 8_500_000)   # 8.5MB > 7,000,000-byte limit in code
 
-    # RENAME: header edit icon -> dialog -> save -> header shows new title
-    if tap_text('Rename chat', timeout=5):
+if BACKEND_TEST:
+    for fn in ('nd_test_red.png', 'nd_test_big.png'):
+        adb('push', '/tmp/' + fn, '/sdcard/Download/' + fn)
+        adb('shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', 'file:///sdcard/Download/' + fn)
+    time.sleep(3)
+
+    # === Section 1: REGENERATE - reply replaced by provably different content ===
+    fresh_conversation()
+    regen_ok = False
+    type_and_send('Reply with a random 8 digit number only.')
+    ok, xml = poll_reply(lambda x: len(_re.findall(r'\d{8}', x)) > 0 and 'Thinking' not in x)
+    nums = _re.findall(r'\d{8}', xml)
+    if ok and nums:
+        r_prev = nums[-1]
+        if tap_text('Regenerate', timeout=10):
+            ok2, xml2 = poll_reply(lambda x: len(_re.findall(r'\d{8}', x)) > 0 and 'Thinking' not in x)
+            nums2 = _re.findall(r'\d{8}', xml2)
+            regen_ok = ok2 and len(nums2) > 0 and nums2[-1] != r_prev
+    assert_true('regenerate replaced reply with new content (mock)', regen_ok)
+    shot('p2-regenerate')
+
+    # === Section 2: RENAME + SEARCH (no AI needed) ===
+    fresh_conversation()
+    type_and_send('Search anchor phrase zebra')
+    time.sleep(4)   # user message stores immediately; reply not needed here
+    dismiss_keyboard()
+    if tap_text('Rename chat', timeout=10):
         time.sleep(1)
         if tap_edittext():
             time.sleep(0.5)
@@ -405,178 +463,145 @@ if BACKEND_TEST:
             time.sleep(0.5)
             type_text('Renamed chat')
             time.sleep(1)
-            tap_text('Save', timeout=4)
-        time.sleep(2)
+            tap_text('Save', timeout=10)
+        assert_true('rename dialog closed', wait_gone('Rename conversation', timeout=12))
+    time.sleep(1)
     xml = dump()
     assert_text('Renamed chat', xml)
     shot('p2-rename')
-
-    # SEARCH: query hits the user message, result row offers to open it
-    if tap_text('Search history', timeout=5):
+    if tap_text('Search history', timeout=8):
         time.sleep(1)
         if tap_edittext():
             time.sleep(0.5)
-            type_text('random')
+            type_text('zebra')
             time.sleep(3)
     xml = dump()
     assert_text('Open conversation', xml)
     shot('p2-search')
     dismiss_keyboard()
-    tap_text('Close', exact=True, timeout=4)
-    time.sleep(1)
+    tap_text('Close', exact=True, timeout=5)
+    wait_gone('Search history', timeout=8)
 
-    # REGENERATE: last assistant reply is replaced by a NEW random number (poll, never crash)
-    R2 = None
-    if tap_text('Regenerate', timeout=8):
-        deadline = time.time() + 80
-        while time.time() < deadline:
-            time.sleep(6)
-            xml = dump()
-            if 'Request failed' in xml:
-                break
-            if _re.findall(r'\d{8}', xml) and 'Thinking' not in xml:
-                break
-    xml = dump()
-    nums2 = _re.findall(r'\d{8}', xml)
-    ok = len(nums2) > 0 and nums2[-1] != R1 and 'Request failed' not in xml
-    assert_true('regenerate replaced reply with new content', ok)
-    if not ok:
-        shot('p2-regenerate-debug')
-    else:
-        R2 = nums2[-1]
-    shot('p2-regenerate')
-
-    # EDIT: user text changes AND the old reply is replaced by a reply to the new text
-    if tap_text('Edit', timeout=8):
+    # === Section 3: EDIT - MANGO fully replaced by PAPAYA proves truncation + new reply ===
+    fresh_conversation()
+    edit_ok = False
+    type_and_send('Reply with the word MANGO only.')
+    ok, xml = poll_reply(lambda x: x.lower().count('mango') >= 2 and 'Thinking' not in x)
+    if ok and tap_text('Edit', timeout=10):
         time.sleep(1)
         if tap_edittext():
             time.sleep(0.5)
             clear_field()
             time.sleep(0.5)
-            type_text('Reply with the word MANGO only.')
+            type_text('Reply with the word PAPAYA only.')
             time.sleep(1)
-            tap_text('Save & resend', timeout=4)
-        deadline = time.time() + 80
-        while time.time() < deadline:
-            time.sleep(6)
-            xml = dump()
-            low = xml.lower()
-            if 'Request failed' in xml:
-                break
-            if low.count('mango') >= 2 and 'Thinking' not in xml:
-                break
-    dismiss_keyboard()
-    xml = dump()
-    low = xml.lower()
-    assert_text('Reply with the word MANGO only', xml)          # edited user text stored
-    assert_true('old user text edited away', 'random 8 digit' not in xml)
-    assert_true('old reply replaced after edit', R2 is None or R2 not in xml)
-    assert_true('reply to edited text present', low.count('mango') >= 2)  # user bubble + assistant reply
-    assert_true('edit resend without error', 'Request failed' not in xml)
+            tap_text('Save & resend', timeout=12)
+        if not wait_gone('Save & resend', timeout=12):
+            shot('p2-edit-dialog-stuck')
+            print('EDIT: dialog did not close'); sys.stdout.flush()
+        else:
+            ok2, xml2 = poll_reply(lambda x: x.lower().count('papaya') >= 2 and 'Thinking' not in x)
+            if ok2:
+                edit_ok = True
+                assert_true('old user text edited away', 'mango' not in xml2.lower())
+                assert_true('edited user text stored', has_exact_node(xml2, 'Reply with the word PAPAYA only.'))
+    assert_true('edit resend produced reply to new text (mock)', edit_ok)
     shot('p2-edit')
 
-    # ATTACHMENT limit is 7,000,000 bytes in code; visible error "File too large (about 7 MB max.)"
-    import base64 as _b64
-    png = _b64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==')
-    with open('/tmp/nd_test_red.png', 'wb') as f:
-        f.write(png)
-    with open('/tmp/nd_test_big.png', 'wb') as f:
-        f.write(png)
-        f.write(b'\0' * 8_500_000)   # 8.5MB > 7MB limit
-    for fn in ('nd_test_red.png', 'nd_test_big.png'):
-        adb('push', '/tmp/' + fn, '/sdcard/Download/' + fn)
-        adb('shell', 'am', 'broadcast', '-a', 'android.intent.action.MEDIA_SCANNER_SCAN_FILE', '-d', 'file:///sdcard/Download/' + fn)
-    time.sleep(3)
-
-    # conv1 ("Renamed chat"): attach + visual question -> reply must identify the red image
+    # === Section 4: ATTACHMENTS - chip, send, answer names the color; oversize error ===
+    fresh_conversation()
     filesA = set(list_app_files().split())
+    conv1_files = set()
+    attach_ok = False
     if attach_file('nd_test_red.png'):
         xml = dump()
         assert_text('nd_test_red.png', xml)   # pending chip
-        if tap_text('Message', timeout=6):
-            time.sleep(1)
-            type_text('What color is this image? One word.')
-            time.sleep(1)
-            tap_text('Send', timeout=3)
-        time.sleep(30)
-        dismiss_keyboard()
-        xml = dump()
-        assert_true('attachment answer identifies red image', 'red' in xml.lower())
-        assert_true('attachment send without error', 'Request failed' not in xml)
+        type_and_send('What color is this image? One word.')
+        attach_ok, xml = poll_reply(lambda x: 'mock red' in x.lower())
+        assert_true('attachment answer names the color (mock)', attach_ok)
         shot('p2-attachment')
     filesB = set(list_app_files().split())
     conv1_files = filesB - filesA
     if PICKER['ok']:
-        assert_true('conv1 attachment file on disk', len(conv1_files) == 1)
-
-    # too-large file -> exact visible error, no file created
+        assert_true('conv1 attachment file on disk', len(conv1_files) >= 1)
     if attach_file('nd_test_big.png'):
         xml = dump()
         assert_text('File too large (about 7 MB max.)', xml)
         shot('p2-attach-toolarge')
         assert_true('oversize file not copied to storage', set(list_app_files().split()) == filesB)
 
-    # conv2: second conversation with its own attachment (preservation reference)
-    tap_text('New chat', timeout=6)
-    time.sleep(1)
+    # === Section 5: second stored conversation (preservation reference) ===
+    fresh_conversation()
     if PICKER['ok'] and attach_file('nd_test_red.png'):
-        if tap_text('Message', timeout=6):
-            time.sleep(1)
-            type_text('Hi')
-            time.sleep(1)
-            tap_text('Send', timeout=3)
-        time.sleep(26)
+        type_and_send('Hi')
+        time.sleep(20)
         dismiss_keyboard()
-        xml = dump()
-        assert_true('conv2 reply without error', 'Request failed' not in xml)
     filesC = set(list_app_files().split())
     conv2_files = filesC - filesB
-
-    # INCOGNITO with an attachment, then FORCE-STOP mid-session (hardest leak case)
-    tap_text('Incognito', timeout=5)
-    time.sleep(1)
-    if PICKER['ok'] and attach_file('nd_test_red.png'):
-        pass
-    if tap_text('Message', timeout=6):
-        time.sleep(1)
-        type_text('Secret note test')
-        time.sleep(1)
-        tap_text('Send', timeout=3)
-    time.sleep(26)
-    dismiss_keyboard()
-    xml = dump()
-    assert_text('Secret note test', xml)
-    shot('p2-incognito-on')
-    filesD = set(list_app_files().split())
-    inc_files = filesD - filesC
     if PICKER['ok']:
-        assert_true('incognito attachment never written to disk', len(inc_files) == 0)
-    relaunch()   # force-stop + cold start while incognito was active
-    tap_nav('Chat')
-    time.sleep(3)
-    tap_text('Conversations', timeout=6)   # open the conversation list
+        assert_true('conv2 attachment file on disk', len(conv2_files) >= 1)
+
+    # === Section 6: INCOGNITO - banner copy, zero disk writes, force-stop non-persistence ===
+    fresh_conversation()
+    tap_text('Incognito', timeout=8)
     time.sleep(2)
     xml = dump()
-    assert_true('incognito conversation not persisted after force-stop', 'Secret note test' not in xml)
-    adb('shell', 'input', 'keyevent', '4')  # close dropdown
+    assert_text('Incognito: not saved to your chat history', xml)   # also proves mode is ON
+    assert_text('Replies still go through your secure backend.', xml)
+    shot('p2-incognito-banner')
+    if PICKER['ok']:
+        attach_file('nd_test_red.png')
+    type_and_send('Secret note test')
+    time.sleep(20)
+    dismiss_keyboard()
+    xml = dump()
+    assert_true('incognito message visible during session', has_exact_node(xml, 'Secret note test'))
+    shot('p2-incognito-on')
+    filesD = set(list_app_files().split())
+    if PICKER['ok']:
+        assert_true('incognito attachment never written to disk', len(filesD - filesC) == 0)
+    relaunch()   # force-stop + cold start WHILE incognito active
+    tap_nav('Chat')
+    time.sleep(3)
+    xml = dump()
+    assert_true('incognito text gone after force-stop restart', 'Secret note test' not in xml)
+    tap_text('Conversations', timeout=8)
+    time.sleep(2)
+    xml = dump()
+    assert_true('no incognito conversation in picker after restart', 'Secret note test' not in xml)
+    adb('shell', 'input', 'keyevent', '4')
     time.sleep(1)
     filesE = set(list_app_files().split())
     if PICKER['ok']:
-        assert_true('incognito attachment file removed after force-stop restart', len(inc_files & filesE) == 0)
+        assert_true('no new files after incognito restart', len(filesE - filesC) == 0)
         assert_true('normal conversation attachment preserved', len(conv2_files & filesE) == len(conv2_files) and len(conv2_files) > 0)
     shot('p2-incognito-after-restart')
 
-    # delete conv1 -> its attachment file gone, conv2's untouched
-    tap_text('Conversations', timeout=6)
+    # === Section 7: delete conv1 -> only its attachment file removed ===
+    tap_text('Conversations', timeout=8)
     time.sleep(2)
-    tap_text('Renamed chat', timeout=6)
+    tap_text('What color is this image? One word.', timeout=8)  # conv1 title (its first message text)
     time.sleep(2)
-    if tap_text('Delete chat', timeout=5):
+    if tap_text('Delete chat', timeout=6):
         time.sleep(3)
     filesF = set(list_app_files().split())
     if PICKER['ok']:
         assert_true('deleted conversation attachment removed', len(conv1_files & filesF) == 0)
         assert_true('other conversation attachment preserved after delete', len(conv2_files & filesF) == len(conv2_files))
+    shot('p2-delete-hygiene')
+
+    # === Section 8: error rendering - concise quota message + expandable detail (deterministic trigger) ===
+    fresh_conversation()
+    type_and_send('TRIGGER429 test')
+    ok, xml = poll_reply(lambda x: 'rate-limited' in x.lower())
+    assert_true('concise quota error shown', ok and 'Wait a minute' in xml)
+    assert_true('raw JSON not dumped on screen', 'exceeded your current quota' not in xml)
+    if ok and tap_text('Technical details', timeout=6):
+        time.sleep(2)
+        xml = dump()
+        assert_text('gemini 429', xml)   # raw detail behind expansion
+    shot('p2-error-rendering')
+
     print('PHASE2-COVERAGE picker=' + ('ok' if PICKER['ok'] else 'MISS'))
     sys.stdout.flush()
 

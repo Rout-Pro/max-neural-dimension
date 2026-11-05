@@ -33,11 +33,16 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      - name: Start mock backend (no provider calls)
+        run: nohup python3 tools/mock_backend.py > /tmp/mock_backend.log 2>&1 & sleep 1; curl -s http://127.0.0.1:8787/v1/health
       - name: Boot emulator, install, drive UI, capture screens
         uses: reactivecircus/android-emulator-runner@v2
         env:
-          ND_TEST_BACKEND_URL: ${{ secrets.ND_TEST_BACKEND_URL }}
-          ND_TEST_APP_TOKEN: ${{ secrets.ND_TEST_APP_TOKEN }}
+          # Mock backend only: deterministic app-logic evidence with ZERO provider
+          # calls (Gemini free quota is preserved; live-provider verification is a
+          # separate, quota-gated batch). Replies are visibly prefixed "MOCK".
+          ND_TEST_BACKEND_URL: http://10.0.2.2:8787
+          ND_TEST_APP_TOKEN: ci-mock-token
         with:
           api-level: 34
           target: google_apis
