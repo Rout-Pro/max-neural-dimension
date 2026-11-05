@@ -193,14 +193,29 @@ def tap_edittext(timeout=8):
     print('MISS EditText'); sys.stdout.flush()
     return False
 
+def settle(timeout=90):
+    """Ride out boot/launcher ANR storms: tap Wait until dialogs stay gone."""
+    deadline = time.time() + timeout
+    quiet = 0
+    while time.time() < deadline:
+        xml = dump()
+        if "isn't responding" in xml or 'is not responding' in xml:
+            quiet = 0
+            tap_text('Wait', timeout=2)
+            time.sleep(4)
+        else:
+            quiet += 1
+            if quiet >= 2:
+                return True
+            time.sleep(3)
+    print('SETtle: ANR storm outlasted budget'); sys.stdout.flush()
+    return False
+
 def relaunch():
     adb('shell', 'am', 'force-stop', PKG)
     adb('shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1')
-    time.sleep(13)
-    for _ in range(6):
-        if not dismiss_anr():
-            break
-        time.sleep(3)
+    time.sleep(10)
+    settle(90)
 
 def list_app_files():
     r = adb('shell', 'run-as', PKG, 'ls', 'files')
@@ -214,6 +229,8 @@ def assert_text(t, xml):
     ok = t.lower() in xml.lower()
     print(('PASS ' if ok else 'FAIL ') + 'expect text: ' + t); sys.stdout.flush()
     return ok
+
+settle(120)   # let a fresh emulator finish boot jank before any driving
 
 OLD_APK = os.environ.get('ND_OLD_APK', '/tmp/old.apk')
 NEW_APK = os.environ.get('ND_NEW_APK', 'app/build/outputs/apk/debug/NeuralDimension-2.0.apk')
