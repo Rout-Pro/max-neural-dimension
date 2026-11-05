@@ -31,7 +31,7 @@ fun RobotView(modifier: Modifier = Modifier) {
             GLSurfaceView(ctx).apply {
                 setEGLContextClientVersion(3)
                 preserveEGLContextOnPause = true
-                setRenderer(RobotRenderer())
+                setRenderer(RobotRenderer(ctx))
                 renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
                 holder[0] = this
             }

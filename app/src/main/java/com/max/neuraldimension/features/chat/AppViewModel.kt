@@ -10,7 +10,7 @@ import com.max.neuraldimension.data.db.Message
 import com.max.neuraldimension.data.db.TaskItem
 import com.max.neuraldimension.data.prefs.MaxSettings
 import com.max.neuraldimension.data.prefs.SettingsRepository
-import com.max.neuraldimension.domain.AiClient
+import com.max.neuraldimension.domain.BackendClient
 import com.max.neuraldimension.domain.AiException
 import com.max.neuraldimension.domain.ChatTurn
 import com.max.neuraldimension.features.voice.VoiceEngine
@@ -30,7 +30,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     val settingsRepo = SettingsRepository(app)
     private val db = AppDb.get(app)
-    private val ai = AiClient()
+    private val backend = BackendClient()
 
     val settings: StateFlow<MaxSettings> =
         settingsRepo.settings.stateIn(viewModelScope, SharingStarted.Eagerly, MaxSettings())
@@ -88,10 +88,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val s = settings.value
             val cid = ensureConversation(text)
             db.chatDao().insertMessage(Message(conversationId = cid, role = "user", text = text))
-            val key = settingsRepo.apiKey(s.provider)
-            if (key.isBlank()) {
+            if (!backend.isConfigured(s)) {
                 db.chatDao().insertMessage(
-                    Message(conversationId = cid, role = "assistant", text = "SETUP_REQUIRED::" + s.provider.label))
+                    Message(conversationId = cid, role = "assistant", text = "SETUP_REQUIRED::backend"))
                 RobotState.mode = RobotState.Mode.CONFUSED
                 viewModelScope.launch { delay(4000); if (RobotState.mode == RobotState.Mode.CONFUSED) RobotState.mode = RobotState.Mode.IDLE }
                 return ""
@@ -105,7 +104,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val sb = StringBuilder()
             var lastWrite = 0L
             try {
-                ai.streamChat(s, key, history) { tok ->
+                backend.streamChat(s, history) { tok ->
                     sb.append(tok)
                     val now = android.os.SystemClock.uptimeMillis()
                     if (now - lastWrite > 250) {
@@ -170,7 +169,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             connectionTest.value = "Testing..."
             connectionTest.value = try {
-                ai.testConnection(settings.value, settingsRepo.apiKey(settings.value.provider))
+                backend.testConnection(settings.value)
             } catch (e: Exception) {
                 e.message ?: "Failed"
             }

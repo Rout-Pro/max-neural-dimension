@@ -107,7 +107,7 @@ fun VoiceScreen(vm: AppViewModel) {
                     val reply = vm.generateAndStore(text)
                     busy = false
                     if (reply.isBlank()) {
-                        statusText = "AI reply unavailable - check Settings > AI Provider"
+                        statusText = "AI reply unavailable - connect the secure backend in Settings"
                         if (continuous) { delay(1200); vm.voice.startListening() }
                     } else {
                         transcript = transcript + (settings.assistantName to reply)

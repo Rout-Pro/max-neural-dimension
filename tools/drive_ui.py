@@ -99,7 +99,7 @@ if tap_text('Message', timeout=6):
     time.sleep(4)
 shot('04-chat-setup-honest')
 xml = dump()
-assert_text('Live AI is not configured yet', xml)
+assert_text('Secure backend is not connected yet', xml)
 
 # Voice tab
 tap_text('Voice', exact=True)
@@ -128,7 +128,7 @@ tap_text('Settings', exact=True)
 time.sleep(3)
 shot('09-settings')
 xml = dump()
-assert_text('AI Provider', xml)
+assert_text('SECURE BACKEND', xml)
 assert_text('Test connection', xml)
 
 print('DRIVE DONE')

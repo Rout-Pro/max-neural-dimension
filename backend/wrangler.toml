@@ -1,0 +1,8 @@
+name = "max-neural-dimension-backend"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+PROVIDER = "gemini"
+MODEL_FAST = "gemini-2.0-flash"
+MODEL_THINKING = "gemini-2.5-flash"

@@ -47,7 +47,6 @@ import com.max.neuraldimension.core.theme.NdSilver
 import com.max.neuraldimension.core.theme.NdViolet
 import com.max.neuraldimension.data.prefs.MaxSettings
 import com.max.neuraldimension.data.prefs.Personality
-import com.max.neuraldimension.data.prefs.Provider
 import com.max.neuraldimension.features.chat.AppViewModel
 import kotlinx.coroutines.launch
 
@@ -69,27 +68,12 @@ fun SettingsScreen(vm: AppViewModel) {
             Field("Assistant name", s.assistantName) { v -> scope.launch { vm.settingsRepo.update { it.copy(assistantName = v) } } }
         }
 
-        Section("AI Provider") {
-            PickerRow("Provider", s.provider.label, Provider.entries.map { it.label }) { idx ->
-                scope.launch { vm.settingsRepo.update { it.copy(provider = Provider.entries[idx]) } }
+        Section("SECURE BACKEND") {
+            Field("Backend URL (https://your-worker.example.workers.dev)", s.backendUrl) { v ->
+                scope.launch { vm.settingsRepo.update { it.copy(backendUrl = v) } }
             }
-            var key by remember(s.provider) { mutableStateOf(vm.settingsRepo.apiKey(s.provider)) }
-            PasswordField("API key for ${s.provider.label} (stored encrypted on this phone)", key) { v ->
-                key = v; vm.settingsRepo.setApiKey(s.provider, v)
-            }
-            when (s.provider) {
-                Provider.GEMINI -> {
-                    Field("Fast model", s.modelFast) { v -> scope.launch { vm.settingsRepo.update { it.copy(modelFast = v) } } }
-                    Field("Thinking model", s.modelThinking) { v -> scope.launch { vm.settingsRepo.update { it.copy(modelThinking = v) } } }
-                }
-                Provider.OPENAI -> {
-                    Field("Base URL", s.openAiBaseUrl) { v -> scope.launch { vm.settingsRepo.update { it.copy(openAiBaseUrl = v) } } }
-                    Field("Model", s.openAiModel) { v -> scope.launch { vm.settingsRepo.update { it.copy(openAiModel = v) } } }
-                }
-                Provider.GROQ -> {
-                    Field("Base URL", s.groqBaseUrl) { v -> scope.launch { vm.settingsRepo.update { it.copy(groqBaseUrl = v) } } }
-                    Field("Model", s.groqModel) { v -> scope.launch { vm.settingsRepo.update { it.copy(groqModel = v) } } }
-                }
+            PasswordField("App token (shared with your backend, not an AI key)", s.appToken) { v ->
+                scope.launch { vm.settingsRepo.update { it.copy(appToken = v) } }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Thinking mode", color = NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f))
@@ -104,8 +88,8 @@ fun SettingsScreen(vm: AppViewModel) {
                 testResult?.let { Text(it.take(80), color = NdMuted, fontSize = 11.sp) }
             }
             Text(
-                "Keys are kept in Android Keystore-encrypted storage on this phone and are never sent anywhere except the selected provider. " +
-                    "A hosted secure backend (keys server-side) is a later phase that needs server hosting.",
+                "AI provider keys (Gemini, OpenAI-compatible, Groq) are stored only on your backend server - never in this app. " +
+                    "The backend source ships in the repo under backend/ and deploys free (see backend/README.md).",
                 color = NdMuted, fontSize = 11.sp
             )
         }
@@ -183,10 +167,10 @@ fun SettingsScreen(vm: AppViewModel) {
             Text("Neural Dimension - version 2.0 (Phase 1)", color = NdSilver, fontSize = 13.sp)
             Spacer(Modifier.height(6.dp))
             Text(
-                "Working now: 3D robot with facial animation and lip-synced voice, live voice conversation, " +
-                    "streaming AI chat (Gemini / OpenAI-compatible / Groq with your key), chat history, tasks, memory, device tools.\n\n" +
-                    "Next phases: reminders and notifications, security lock, web development studio, " +
-                    "image/video generation (needs a provider with those APIs), secure hosted backend.",
+                "Working now: rigged 3D robot (GLB asset with facial morph targets) with lip-synced voice, live voice conversation, " +
+                    "streaming AI chat through your secure backend (keys stay server-side), chat history, tasks, memory, device tools.\n\n" +
+                    "Next phases: reminders and notifications, security lock, wake word, web development studio, " +
+                    "image/video generation (needs provider APIs on the backend), performance tiers.",
                 color = NdMuted, fontSize = 12.sp
             )
         }

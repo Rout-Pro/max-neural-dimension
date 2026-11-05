@@ -96,12 +96,12 @@ fun HomeScreen(vm: AppViewModel, onOpenChat: () -> Unit, onOpenVoice: () -> Unit
                 }
                 Spacer(Modifier.weight(1f))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val hasKey = vm.settingsRepo.hasKey(settings.provider)
-                    StatusDot(if (hasKey) NdOk else NdWarn)
+                    val connected = settings.backendUrl.isNotBlank()
+                    StatusDot(if (connected) NdOk else NdWarn)
                     Spacer(Modifier.width(5.dp))
                     Text(
-                        if (hasKey) settings.provider.label else "No AI key",
-                        color = if (hasKey) NdOk else NdWarn, fontSize = 11.sp
+                        if (connected) "Backend linked" else "No backend",
+                        color = if (connected) NdOk else NdWarn, fontSize = 11.sp
                     )
                 }
             }
@@ -131,7 +131,7 @@ fun HomeScreen(vm: AppViewModel, onOpenChat: () -> Unit, onOpenVoice: () -> Unit
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     HoloPanel("AI STATUS", Icons.Default.Psychology, 0, { expanded = PanelKind.AI }, Modifier.width(panelW)) {
-                        PanelLine("Provider", settings.provider.label)
+                        PanelLine("Backend", if (settings.backendUrl.isNotBlank()) "Linked" else "Not set")
                         PanelLine("State", modeTick.name.lowercase().replaceFirstChar { it.uppercase() }, NdNeon)
                     }
                     HoloPanel("TASKS", Icons.Default.Task, 1, { expanded = PanelKind.TASKS }, Modifier.width(panelW)) {
@@ -227,12 +227,11 @@ fun HomeScreen(vm: AppViewModel, onOpenChat: () -> Unit, onOpenVoice: () -> Unit
                 Column {
                     when (kind) {
                         PanelKind.AI -> {
-                            PanelLine("Provider", settings.provider.label, NdSilver)
-                            PanelLine("Model", if (settings.thinkingMode) settings.modelThinking else activeModelLabel(settings), NdSilver)
-                            PanelLine("Key", if (vm.settingsRepo.hasKey(settings.provider)) "Saved (encrypted on device)" else "Not set", NdSilver)
+                            PanelLine("Backend", if (settings.backendUrl.isNotBlank()) settings.backendUrl else "Not configured", NdSilver)
+                            PanelLine("Mode", if (settings.thinkingMode) "Thinking" else "Fast", NdSilver)
                             PanelLine("State", modeTick.name, NdNeon)
                             Spacer(Modifier.height(6.dp))
-                            Text("Keys stay on this phone. A hosted secure backend can be added later.", color = NdMuted, fontSize = 11.sp)
+                            Text("Provider keys live on your secure backend server, never in the app. Set the backend URL in Settings.", color = NdMuted, fontSize = 11.sp)
                         }
                         PanelKind.DAILY -> {
                             PanelLine("Time", SimpleDateFormat("HH:mm:ss", Locale.US).format(now), NdSilver)
@@ -269,8 +268,3 @@ fun HomeScreen(vm: AppViewModel, onOpenChat: () -> Unit, onOpenVoice: () -> Unit
     }
 }
 
-private fun activeModelLabel(s: com.max.neuraldimension.data.prefs.MaxSettings): String = when (s.provider) {
-    com.max.neuraldimension.data.prefs.Provider.GEMINI -> s.modelFast
-    com.max.neuraldimension.data.prefs.Provider.OPENAI -> s.openAiModel
-    com.max.neuraldimension.data.prefs.Provider.GROQ -> s.groqModel
-}

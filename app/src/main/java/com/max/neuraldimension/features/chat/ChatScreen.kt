@@ -49,6 +49,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.max.neuraldimension.core.theme.NdBlack
@@ -130,10 +131,10 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text("Start a conversation with ${settings.assistantName}", color = NdMuted, fontSize = 14.sp)
-                        if (!vm.settingsRepo.hasKey(settings.provider)) {
+                        if (settings.backendUrl.isBlank()) {
                             Spacer(Modifier.height(10.dp))
                             Text(
-                                "No AI key saved yet — add one in Settings > AI Provider to enable live replies.",
+                                "Secure backend not connected yet — set its URL in Settings > Secure Backend to enable live replies.",
                                 color = NdWarn, fontSize = 12.sp
                             )
                         }
@@ -196,11 +197,10 @@ private fun MessageBubble(m: Message, onCopy: () -> Unit, onOpenSettings: () -> 
         ) {
             when {
                 m.text.startsWith("SETUP_REQUIRED::") -> {
-                    val provider = m.text.removePrefix("SETUP_REQUIRED::")
-                    Text("Live AI is not configured yet", color = NdWarn, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Secure backend is not connected yet", color = NdWarn, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Add your $provider API key in Settings > AI Provider and your messages will get real answers. The key stays encrypted on this phone.",
+                        "MAX answers through your secure backend, which holds the AI provider keys server-side. Set its URL in Settings > Secure Backend and your messages will get real answers.",
                         color = NdMuted, fontSize = 12.sp
                     )
                     TextButton(onClick = onOpenSettings) { Text("Open Settings", color = NdLavender, fontSize = 12.sp) }

@@ -3,6 +3,8 @@ package com.max.neuraldimension.core.gl
 import android.opengl.GLES30
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.FloatBuffer
+import java.nio.ShortBuffer
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -108,8 +110,9 @@ object Meshes {
     }
 }
 
-/** GPU-side mesh. upload() must be called on the GL thread (lazy on first draw). */
-class MeshGpu(data: MeshData) {
+/** GPU-side mesh. upload() must be called on the GL thread (lazy on first draw).
+ * Vertex layout: position(3), normal(3), morph0 delta(3), morph1 delta(3) - 48 bytes. */
+class MeshGpu(data: MeshData, morphs: List<FloatArray> = emptyList()) {
     private val interleaved: FloatBuffer
     private val indexBuf: ShortBuffer
     val indexCount = data.indices.size
@@ -117,14 +120,22 @@ class MeshGpu(data: MeshData) {
 
     init {
         val n = data.positions.size / 3
-        val inter = FloatArray(n * 6)
+        val m0 = morphs.getOrNull(0)
+        val m1 = morphs.getOrNull(1)
+        val inter = FloatArray(n * 12)
         for (i in 0 until n) {
-            inter[i * 6] = data.positions[i * 3]
-            inter[i * 6 + 1] = data.positions[i * 3 + 1]
-            inter[i * 6 + 2] = data.positions[i * 3 + 2]
-            inter[i * 6 + 3] = data.normals[i * 3]
-            inter[i * 6 + 4] = data.normals[i * 3 + 1]
-            inter[i * 6 + 5] = data.normals[i * 3 + 2]
+            inter[i * 12] = data.positions[i * 3]
+            inter[i * 12 + 1] = data.positions[i * 3 + 1]
+            inter[i * 12 + 2] = data.positions[i * 3 + 2]
+            inter[i * 12 + 3] = data.normals[i * 3]
+            inter[i * 12 + 4] = data.normals[i * 3 + 1]
+            inter[i * 12 + 5] = data.normals[i * 3 + 2]
+            if (m0 != null) {
+                inter[i * 12 + 6] = m0[i * 3]; inter[i * 12 + 7] = m0[i * 3 + 1]; inter[i * 12 + 8] = m0[i * 3 + 2]
+            }
+            if (m1 != null) {
+                inter[i * 12 + 9] = m1[i * 3]; inter[i * 12 + 10] = m1[i * 3 + 1]; inter[i * 12 + 11] = m1[i * 3 + 2]
+            }
         }
         interleaved = ByteBuffer.allocateDirect(inter.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
         interleaved.put(inter); interleaved.position(0)
@@ -141,10 +152,15 @@ class MeshGpu(data: MeshData) {
         GLES30.glBufferData(GLES30.GL_ARRAY_BUFFER, interleaved.capacity() * 4, interleaved, GLES30.GL_STATIC_DRAW)
         GLES30.glBindBuffer(GLES30.GL_ELEMENT_ARRAY_BUFFER, ids[2])
         GLES30.glBufferData(GLES30.GL_ELEMENT_ARRAY_BUFFER, indexBuf.capacity() * 2, indexBuf, GLES30.GL_STATIC_DRAW)
+        val stride = 48
         GLES30.glEnableVertexAttribArray(0)
-        GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, 24, 0)
+        GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, stride, 0)
         GLES30.glEnableVertexAttribArray(1)
-        GLES30.glVertexAttribPointer(1, 3, GLES30.GL_FLOAT, false, 24, 12)
+        GLES30.glVertexAttribPointer(1, 3, GLES30.GL_FLOAT, false, stride, 12)
+        GLES30.glEnableVertexAttribArray(2)
+        GLES30.glVertexAttribPointer(2, 3, GLES30.GL_FLOAT, false, stride, 24)
+        GLES30.glEnableVertexAttribArray(3)
+        GLES30.glVertexAttribPointer(3, 3, GLES30.GL_FLOAT, false, stride, 36)
         GLES30.glBindVertexArray(0)
     }
 

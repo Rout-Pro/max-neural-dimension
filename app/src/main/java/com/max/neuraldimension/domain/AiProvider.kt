@@ -2,7 +2,6 @@ package com.max.neuraldimension.domain
 
 import com.max.neuraldimension.data.prefs.MaxSettings
 import com.max.neuraldimension.data.prefs.Personality
-import com.max.neuraldimension.data.prefs.Provider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -33,7 +32,11 @@ object Personalities {
     }
 }
 
-class AiClient(private val http: OkHttpClient = defaultClient()) {
+/**
+ * Talks only to the user's secure backend (see backend/). Provider keys never
+ * touch the APK or the phone (blueprint Part 11).
+ */
+class BackendClient(private val http: OkHttpClient = defaultClient()) {
 
     companion object {
         fun defaultClient() = OkHttpClient.Builder()
@@ -43,127 +46,62 @@ class AiClient(private val http: OkHttpClient = defaultClient()) {
             .build()
     }
 
-    /** Streams a reply, invoking onToken for each text chunk. Returns the full text. */
-    suspend fun streamChat(s: MaxSettings, key: String, history: List<ChatTurn>, onToken: (String) -> Unit): String =
+    fun isConfigured(s: MaxSettings): Boolean = s.backendUrl.isNotBlank()
+
+    suspend fun testConnection(s: MaxSettings): String = withContext(Dispatchers.IO) {
+        if (!isConfigured(s)) throw AiException("Secure backend URL is not set yet")
+        val req = Request.Builder()
+            .url(s.backendUrl + "/v1/health")
+            .apply { if (s.appToken.isNotBlank()) header("Authorization", "Bearer ${s.appToken}") }
+            .get().build()
+        http.newCall(req).execute().use { r ->
+            val body = r.body?.string().orEmpty()
+            if (r.isSuccessful) "Backend reachable: ${body.take(120)}"
+            else "Backend error ${r.code}: ${body.take(200)}"
+        }
+    }
+
+    /** Streams a reply from the secure backend; onToken per text chunk. */
+    suspend fun streamChat(s: MaxSettings, history: List<ChatTurn>, onToken: (String) -> Unit): String =
         withContext(Dispatchers.IO) {
-            if (key.isBlank()) throw AiException("NO_KEY")
-            when (s.provider) {
-                Provider.GEMINI -> streamGemini(s, key, history, onToken)
-                Provider.OPENAI -> streamOpenAi(s.openAiBaseUrl, s.openAiModel, key, s, history, onToken)
-                Provider.GROQ -> streamOpenAi(s.groqBaseUrl, s.groqModel, key, s, history, onToken)
+            if (!isConfigured(s)) throw AiException("NO_BACKEND")
+            val msgs = JSONArray()
+            history.forEach { t ->
+                msgs.put(JSONObject()
+                    .put("role", if (t.role == "user") "user" else "assistant")
+                    .put("content", t.text))
             }
-        }
-
-    /** Lightweight connection test: one tiny non-streaming generation. */
-    suspend fun testConnection(s: MaxSettings, key: String): String = withContext(Dispatchers.IO) {
-        if (key.isBlank()) throw AiException("No API key saved for ${s.provider.label}")
-        when (s.provider) {
-            Provider.GEMINI -> {
-                val model = activeModel(s)
-                val body = JSONObject().put("contents", JSONArray().put(
-                    JSONObject().put("parts", JSONArray().put(JSONObject().put("text", "Say OK")))))
-                val req = Request.Builder()
-                    .url("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent")
-                    .header("x-goog-api-key", key)
-                    .post(body.toString().toRequestBody("application/json".toMediaType()))
-                    .build()
-                http.newCall(req).execute().use { r ->
-                    if (r.isSuccessful) "Connected to Gemini ($model)"
-                    else "Gemini error ${r.code}: ${r.body?.string()?.take(200)}"
-                }
-            }
-            Provider.OPENAI, Provider.GROQ -> {
-                val base = if (s.provider == Provider.GROQ) s.groqBaseUrl else s.openAiBaseUrl
-                val req = Request.Builder()
-                    .url(base.trimEnd('/') + "/models")
-                    .header("Authorization", "Bearer $key")
-                    .get().build()
-                http.newCall(req).execute().use { r ->
-                    if (r.isSuccessful) "Connected to ${s.provider.label}"
-                    else "${s.provider.label} error ${r.code}: ${r.body?.string()?.take(200)}"
-                }
-            }
-        }
-    }
-
-    fun activeModel(s: MaxSettings): String = when (s.provider) {
-        Provider.GEMINI -> if (s.thinkingMode) s.modelThinking else s.modelFast
-        Provider.OPENAI -> s.openAiModel
-        Provider.GROQ -> s.groqModel
-    }
-
-    private fun streamGemini(s: MaxSettings, key: String, history: List<ChatTurn>, onToken: (String) -> Unit): String {
-        val model = activeModel(s)
-        val contents = JSONArray()
-        history.forEach { t ->
-            contents.put(JSONObject()
-                .put("role", if (t.role == "user") "user" else "model")
-                .put("parts", JSONArray().put(JSONObject().put("text", t.text))))
-        }
-        val body = JSONObject()
-            .put("contents", contents)
-            .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", Personalities.systemPrompt(s)))))
-        val req = Request.Builder()
-            .url("https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse")
-            .header("x-goog-api-key", key)
-            .header("Accept", "text/event-stream")
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-            .build()
-        val full = StringBuilder()
-        http.newCall(req).execute().use { r ->
-            if (!r.isSuccessful) throw AiException("Gemini error ${r.code}: ${r.body?.string()?.take(300)}")
-            val source = r.body!!.source()
-            while (!source.exhausted()) {
-                val line = source.readUtf8Line() ?: break
-                if (!line.startsWith("data:")) continue
-                val payload = line.substring(5).trim()
-                if (payload.isEmpty() || payload == "[DONE]") continue
-                try {
-                    val obj = JSONObject(payload)
-                    val candidates = obj.optJSONArray("candidates") ?: continue
-                    val parts = candidates.getJSONObject(0).optJSONObject("content")?.optJSONArray("parts") ?: continue
-                    for (i in 0 until parts.length()) {
-                        val txt = parts.getJSONObject(i).optString("text", "")
+            val body = JSONObject()
+                .put("messages", msgs)
+                .put("mode", if (s.thinkingMode) "thinking" else "fast")
+                .put("system", Personalities.systemPrompt(s))
+            val req = Request.Builder()
+                .url(s.backendUrl + "/v1/chat")
+                .apply { if (s.appToken.isNotBlank()) header("Authorization", "Bearer ${s.appToken}") }
+                .header("Accept", "text/event-stream")
+                .post(body.toString().toRequestBody("application/json".toMediaType()))
+                .build()
+            val full = StringBuilder()
+            http.newCall(req).execute().use { r ->
+                if (!r.isSuccessful) throw AiException("Backend error ${r.code}: ${r.body?.string()?.take(300)}")
+                val source = r.body!!.source()
+                while (!source.exhausted()) {
+                    val line = source.readUtf8Line() ?: break
+                    if (!line.startsWith("data:")) continue
+                    val payload = line.substring(5).trim()
+                    if (payload.isEmpty()) continue
+                    if (payload == "[DONE]") break
+                    try {
+                        val obj = JSONObject(payload)
+                        val err = obj.optString("error", "")
+                        if (err.isNotEmpty()) throw AiException(err)
+                        val txt = obj.optString("t", "")
                         if (txt.isNotEmpty()) { full.append(txt); onToken(txt) }
-                    }
-                } catch (_: Exception) { }
+                    } catch (e: AiException) {
+                        throw e
+                    } catch (_: Exception) { }
+                }
             }
+            return@withContext full.toString()
         }
-        return full.toString()
-    }
-
-    private fun streamOpenAi(baseUrl: String, model: String, key: String, s: MaxSettings, history: List<ChatTurn>, onToken: (String) -> Unit): String {
-        val msgs = JSONArray()
-        msgs.put(JSONObject().put("role", "system").put("content", Personalities.systemPrompt(s)))
-        history.forEach { t ->
-            msgs.put(JSONObject().put("role", if (t.role == "user") "user" else "assistant").put("content", t.text))
-        }
-        val body = JSONObject().put("model", model).put("messages", msgs).put("stream", true)
-        val req = Request.Builder()
-            .url(baseUrl.trimEnd('/') + "/chat/completions")
-            .header("Authorization", "Bearer $key")
-            .header("Accept", "text/event-stream")
-            .post(body.toString().toRequestBody("application/json".toMediaType()))
-            .build()
-        val full = StringBuilder()
-        http.newCall(req).execute().use { r ->
-            if (!r.isSuccessful) throw AiException("HTTP ${r.code}: ${r.body?.string()?.take(300)}")
-            val source = r.body!!.source()
-            while (!source.exhausted()) {
-                val line = source.readUtf8Line() ?: break
-                if (!line.startsWith("data:")) continue
-                val payload = line.substring(5).trim()
-                if (payload == "[DONE]") break
-                if (payload.isEmpty()) continue
-                try {
-                    val obj = JSONObject(payload)
-                    val choices = obj.optJSONArray("choices") ?: continue
-                    val delta = choices.getJSONObject(0).optJSONObject("delta") ?: continue
-                    val txt = delta.optString("content", "")
-                    if (txt.isNotEmpty()) { full.append(txt); onToken(txt) }
-                } catch (_: Exception) { }
-            }
-        }
-        return full.toString()
-    }
 }

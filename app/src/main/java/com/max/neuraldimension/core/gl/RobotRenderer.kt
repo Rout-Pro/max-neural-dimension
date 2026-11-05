@@ -18,6 +18,10 @@ class Node(val name: String) {
     var px = 0f; var py = 0f; var pz = 0f
     var rx = 0f; var ry = 0f; var rz = 0f
     var sx = 1f; var sy = 1f; var sz = 1f
+    var baseSx = 1f; var baseSy = 1f; var baseSz = 1f
+    var rotMat: FloatArray? = null
+    var morphNames: List<String> = emptyList()
+    var morphW = floatArrayOf(0f, 0f)
     var color = floatArrayOf(0.91f, 0.90f, 0.94f)   // silver default
     var emissive = floatArrayOf(0f, 0f, 0f)
     var alpha = 1f
@@ -27,22 +31,26 @@ class Node(val name: String) {
     val world = FloatArray(16)
 }
 
-class RobotRenderer : GLSurfaceView.Renderer {
+class RobotRenderer(private val context: android.content.Context) : GLSurfaceView.Renderer {
 
     companion object {
         const val VERT = """#version 300 es
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
+layout(location=2) in vec3 aMorph0;
+layout(location=3) in vec3 aMorph1;
 uniform mat4 uMVP;
 uniform mat4 uModel;
 uniform mat3 uNormalMat;
+uniform vec2 uMorphW;
 out vec3 vNormal;
 out vec3 vWorld;
 void main() {
-    vec4 w = uModel * vec4(aPos, 1.0);
+    vec3 p = aPos + aMorph0 * uMorphW.x + aMorph1 * uMorphW.y;
+    vec4 w = uModel * vec4(p, 1.0);
     vWorld = w.xyz;
     vNormal = uNormalMat * aNormal;
-    gl_Position = uMVP * vec4(aPos, 1.0);
+    gl_Position = uMVP * vec4(p, 1.0);
 }"""
         const val FRAG = """#version 300 es
 precision mediump float;
@@ -149,9 +157,6 @@ void main() {
     private val normalMat = FloatArray(9)
     private val camPos = floatArrayOf(0f, 0.30f, 4.3f)
 
-    private lateinit var sphere: MeshGpu
-    private lateinit var cyl: MeshGpu
-    private lateinit var torus: MeshGpu
     private lateinit var bgTri: MeshGpu
     private lateinit var quad: MeshGpu
 
@@ -186,12 +191,9 @@ void main() {
         bgProg = buildProgram(BG_VERT, BG_FRAG)
         ptProg = buildProgram(PT_VERT, PT_FRAG)
         glowProg = buildProgram(GLOW_VERT, GLOW_FRAG)
-        sphere = MeshGpu(Meshes.sphere(28, 36))
-        cyl = MeshGpu(Meshes.cylinder(28))
-        torus = MeshGpu(Meshes.torus(40, 14, 0.085f))
         bgTri = MeshGpu(Meshes.fullscreenTriangle())
         quad = MeshGpu(Meshes.quad())
-        buildScene()
+        loadSceneFromAsset()
         buildStars()
     }
 
@@ -223,64 +225,20 @@ void main() {
 
     // ---------------- scene ----------------
 
-    private fun buildScene() {
-        root = Node("root")
-        torso = Node("torso").apply {
-            mesh = sphere; py = -1.62f; sx = 0.98f; sy = 0.98f; sz = 0.72f
-            color = f3(0.90f, 0.89f, 0.93f); metallic = 0.9f; rough = 0.28f
-        }
-        val shoulderL = Node("shoulderL").apply {
-            mesh = sphere; px = -0.82f; py = -1.05f; sx = 0.34f; sy = 0.40f; sz = 0.34f
-            color = f3(0.88f, 0.87f, 0.92f); metallic = 0.9f; rough = 0.3f
-        }
-        val shoulderR = shoulderL.cloneAs("shoulderR"); shoulderR.px = 0.82f
-        val neck = Node("neck").apply {
-            mesh = cyl; py = -0.28f; sx = 0.17f; sy = 0.42f; sz = 0.17f
-            color = f3(0.72f, 0.70f, 0.78f); metallic = 0.95f; rough = 0.35f
-        }
-        headGroup = Node("head").apply { py = 0.32f }
-        val skull = Node("skull").apply {
-            mesh = sphere; py = 0.12f; sx = 0.56f; sy = 0.64f; sz = 0.58f
-            color = f3(0.92f, 0.91f, 0.95f); metallic = 0.82f; rough = 0.22f
-        }
-        face = Node("face").apply {
-            mesh = sphere; py = 0.10f; pz = 0.235f; sx = 0.465f; sy = 0.55f; sz = 0.375f
-            color = f3(0.13f, 0.05f, 0.24f); emissive = f3(0.16f, 0.05f, 0.30f)
-            alpha = 0.97f; metallic = 0.35f; rough = 0.06f; transparent = true
-        }
-        eyeL = Node("eyeL").apply {
-            mesh = sphere; px = -0.175f; py = 0.16f; pz = 0.55f; sx = 0.062f; sy = 0.085f; sz = 0.03f
-            color = f3(0.85f, 0.73f, 1f); emissive = f3(0.75f, 0.55f, 1.15f); metallic = 0f; rough = 0.5f
-        }
-        eyeR = eyeL.cloneAs("eyeR"); eyeR.px = 0.175f
-        mouth = Node("mouth").apply {
-            mesh = sphere; py = -0.155f; pz = 0.55f; sx = 0.115f; sy = 0.018f; sz = 0.02f
-            color = f3(0.65f, 0.36f, 1f); emissive = f3(0.55f, 0.28f, 0.95f); metallic = 0f; rough = 0.5f
-        }
-        earL = Node("earL").apply {
-            mesh = cyl; px = -0.575f; py = 0.10f; rz = (PI / 2).toFloat(); sx = 0.10f; sy = 0.05f; sz = 0.10f
-            color = f3(0.80f, 0.78f, 0.86f); emissive = f3(0.10f, 0.03f, 0.20f); metallic = 0.9f; rough = 0.3f
-        }
-        earR = earL.cloneAs("earR"); earR.px = 0.575f
-        headGroup.children.addAll(listOf(skull, face, eyeL, eyeR, mouth, earL, earR))
-        core = Node("core").apply {
-            mesh = sphere; py = -0.85f; pz = 0.60f; sx = 0.11f; sy = 0.11f; sz = 0.05f
-            color = f3(0.65f, 0.36f, 1f); emissive = f3(0.50f, 0.24f, 0.90f); metallic = 0f; rough = 0.4f
-        }
-        ring = Node("ring").apply {
-            mesh = torus; py = -2.28f; rx = 0f; sx = 0.95f; sy = 0.95f; sz = 0.95f
-            color = f3(0.50f, 0.24f, 1f); emissive = f3(0.38f, 0.16f, 0.72f)
-            alpha = 0.85f; metallic = 0.2f; rough = 0.4f; transparent = true
-        }
-        root.children.addAll(listOf(torso, shoulderL, shoulderR, neck, headGroup, core, ring))
-    }
-
-    private fun Node.cloneAs(n: String): Node {
-        val c = Node(n)
-        c.mesh = mesh; c.px = px; c.py = py; c.pz = pz; c.rx = rx; c.ry = ry; c.rz = rz
-        c.sx = sx; c.sy = sy; c.sz = sz; c.color = color.copyOf(); c.emissive = emissive.copyOf()
-        c.alpha = alpha; c.metallic = metallic; c.rough = rough; c.transparent = transparent
-        return c
+    private fun loadSceneFromAsset() {
+        val scene = GlbLoader.load(context.assets, "max_robot.glb")
+        root = scene.root
+        torso = scene.byName.getValue("torso")
+        headGroup = scene.byName.getValue("head")
+        face = scene.byName.getValue("face")
+        eyeL = scene.byName.getValue("eyeL")
+        eyeR = scene.byName.getValue("eyeR")
+        mouth = scene.byName.getValue("mouth")
+        ring = scene.byName.getValue("ring")
+        core = scene.byName.getValue("core")
+        earL = scene.byName.getValue("earL")
+        earR = scene.byName.getValue("earR")
+        ring.rx = 0.42f // tilt so its rotation is visible
     }
 
     private fun f3(a: Float, b: Float, c: Float) = floatArrayOf(a, b, c)
@@ -311,17 +269,17 @@ void main() {
         val targetAmp = if (mode == RobotState.Mode.SPEAKING) RobotState.mouthAmp else 0f
         ampSmooth += (targetAmp - ampSmooth) * 0.45f
 
-        // blink scheduling
+        // blink scheduling -> drives the eyes' "blink" morph weight
         if (blinkT < 0f && t > nextBlink) { blinkT = t; nextBlink = t + 2.4f + Random.nextFloat() * 3.2f }
-        var eyeOpen = 1f
+        var blinkW = 0f
         if (blinkT >= 0f) {
             val bt = (t - blinkT) / 0.16f
             if (bt >= 1f) blinkT = -1f
-            else { val c = if (bt < 0.5f) bt * 2f else (1f - bt) * 2f; eyeOpen = 1f - 0.92f * c }
+            else blinkW = if (bt < 0.5f) bt * 2f else (1f - bt) * 2f
         }
 
         val idle = sin(t * 1.35f) * intensity
-        torso.sy = 0.98f * (1f + 0.012f * idle)
+        torso.sy = torso.baseSy * (1f + 0.012f * idle)
         core.emissive = f3(0.42f + 0.12f * sin(t * 2.2f), 0.20f, 0.78f + 0.14f * sin(t * 2.2f))
 
         headGroup.ry = (0.14f * sin(t * 0.33f) + 0.05f * sin(t * 0.9f)) * intensity
@@ -332,7 +290,7 @@ void main() {
         ring.ry = t * 0.5f * intensity
         var eyeScale = 1f
         var eyeShift = 0f
-        var mouthOpen = ampSmooth
+        var mouthW = ampSmooth
         var mouthWide = 1f
         pulse = 0f
 
@@ -355,8 +313,8 @@ void main() {
                 pulse = ampSmooth * 0.8f
             }
             RobotState.Mode.HAPPY, RobotState.Mode.EXCITED -> {
-                eyeOpen = minOf(eyeOpen, 0.62f)
-                mouthOpen = maxOf(mouthOpen, 0.5f); mouthWide = 1.35f
+                blinkW = maxOf(blinkW, 0.38f)
+                mouthW = maxOf(mouthW, 0.55f); mouthWide = 1.3f
                 headGroup.rz += 0.08f
             }
             RobotState.Mode.CURIOUS -> {
@@ -364,7 +322,7 @@ void main() {
                 eyeShift = 0.02f * sin(t * 1.2f)
             }
             RobotState.Mode.CONFUSED -> {
-                headGroup.rz += -0.11f; eyeL.sy = 0.085f * 0.8f
+                headGroup.rz += -0.11f
             }
             RobotState.Mode.ERROR -> {
                 pulse = 0.5f
@@ -375,15 +333,15 @@ void main() {
         errMix += ((if (mode == RobotState.Mode.ERROR) 1f else 0f) - errMix) * 0.12f
         val eL = mix(f3(0.75f, 0.55f, 1.15f), f3(1.2f, 0.25f, 0.22f), errMix)
         eyeL.emissive = eL; eyeR.emissive = eL.copyOf()
-        val mEm = mix(f3(0.55f, 0.28f, 0.95f), f3(1.1f, 0.2f, 0.2f), errMix)
-        mouth.emissive = mEm
+        mouth.emissive = mix(f3(0.55f, 0.28f, 0.95f), f3(1.1f, 0.2f, 0.2f), errMix)
 
-        eyeL.sx = 0.062f * eyeScale; eyeL.sy = 0.085f * eyeScale * eyeOpen * (if (mode == RobotState.Mode.CONFUSED) 0.8f else 1f)
-        eyeR.sx = 0.062f * eyeScale; eyeR.sy = 0.085f * eyeScale * eyeOpen
+        eyeL.sx = eyeL.baseSx * eyeScale; eyeL.sy = eyeL.baseSy * eyeScale
+        eyeR.sx = eyeR.baseSx * eyeScale; eyeR.sy = eyeR.baseSy * eyeScale
         eyeL.px = -0.175f + eyeShift; eyeR.px = 0.175f + eyeShift
+        eyeL.morphW[0] = blinkW; eyeR.morphW[0] = blinkW
 
-        mouth.sy = 0.018f * (0.6f + 3.4f * mouthOpen)
-        mouth.sx = 0.115f * mouthWide
+        mouth.morphW[0] = mouthW
+        mouth.sx = mouth.baseSx * mouthWide
     }
 
     private fun mix(a: FloatArray, b: FloatArray, m: Float) = f3(
@@ -394,6 +352,12 @@ void main() {
     private fun drawNode(n: Node, parent: FloatArray, transparentPass: Boolean) {
         Matrix.setIdentityM(model, 0)
         Matrix.translateM(model, 0, n.px, n.py, n.pz)
+        val rm = n.rotMat
+        if (rm != null) {
+            val rot = FloatArray(16)
+            Matrix.multiplyMM(rot, 0, model, 0, rm, 0)
+            System.arraycopy(rot, 0, model, 0, 16)
+        }
         if (n.rz != 0f) Matrix.rotateM(model, 0, n.rz * 57.2958f, 0f, 0f, 1f)
         if (n.ry != 0f) Matrix.rotateM(model, 0, n.ry * 57.2958f, 0f, 1f, 0f)
         if (n.rx != 0f) Matrix.rotateM(model, 0, n.rx * 57.2958f, 1f, 0f, 0f)
@@ -416,6 +380,7 @@ void main() {
             GLES30.glUniform3f(loc(prog, "uRimColor"), 0.85f, 0.72f, 1f)
             GLES30.glUniform1f(loc(prog, "uMetallic"), n.metallic)
             GLES30.glUniform1f(loc(prog, "uRough"), n.rough)
+            GLES30.glUniform2f(loc(prog, "uMorphW"), n.morphW[0], n.morphW[1])
             GLES30.glEnable(GLES30.GL_BLEND)
             GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
             n.mesh!!.draw()
