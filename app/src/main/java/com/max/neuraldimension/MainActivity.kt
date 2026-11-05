@@ -179,7 +179,7 @@ private fun HomeScreen(onChat: () -> Unit, onVoice: () -> Unit, onTools: () -> U
                 ActionTile("Explore all tools", Icons.Default.AutoAwesome, Modifier.fillMaxWidth(), onTools)
             }
             Spacer(Modifier.height(18.dp))
-            Text("Quick access", color = Lavender, fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.Start))
+            Box(Modifier.fillMaxWidth()) { Text("Quick access", color = Lavender, fontWeight = FontWeight.SemiBold) }
             Spacer(Modifier.height(10.dp))
         }
         item {
