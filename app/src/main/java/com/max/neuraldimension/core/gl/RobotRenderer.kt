@@ -214,7 +214,13 @@ void main() {
         GLES30.glDepthMask(true)
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
 
-        Matrix.setLookAtM(view, 0, camPos[0], camPos[1], camPos[2], 0f, -0.02f, 0f, 0f, 1f, 0f)
+        if (RobotState.compactBust) {
+            camPos[1] = 0.30f; camPos[2] = 4.6f
+            Matrix.setLookAtM(view, 0, camPos[0], camPos[1], camPos[2], 0f, -0.55f, 0f, 0f, 1f, 0f)
+        } else {
+            camPos[1] = 0.25f; camPos[2] = 4.0f
+            Matrix.setLookAtM(view, 0, camPos[0], camPos[1], camPos[2], 0f, -0.02f, 0f, 0f, 1f, 0f)
+        }
         Matrix.setIdentityM(model, 0)
         drawNode(root, model, transparentPass = false)
         GLES30.glDepthMask(false)

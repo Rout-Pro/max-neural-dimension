@@ -57,12 +57,9 @@ def tap_text(t, timeout=12, exact=False):
     return False
 
 def type_text(s):
-    # Fast path for shell/IME-safe strings.
-    if re.fullmatch(r'[A-Za-z0-9:./_\-]+', s):
-        adb('shell', 'input', 'text', s)
-        return
-    # Char-by-char: avoids 'input text' %s-escape and device-shell expansion
-    # of chars like $ % + ^.
+    # Always char-by-char: one adb call per character. A full-string
+    # 'input text' drops characters on slow (SwiftShader) emulators, and the
+    # per-char form also avoids %s-escape and shell-expansion of $ % + ^ etc.
     for ch in s:
         if ch == ' ':
             adb('shell', 'input', 'text', '%s')
@@ -70,6 +67,7 @@ def type_text(s):
             adb('shell', 'input', 'text', '"\'"'"'"'"'"''")
         else:
             adb('shell', 'input', 'text', "'" + ch + "'")
+        time.sleep(0.12)
 
 def parse_nodes(xml):
     nodes = []

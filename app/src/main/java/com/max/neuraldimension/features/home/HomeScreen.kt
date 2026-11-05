@@ -31,6 +31,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -76,7 +77,11 @@ fun HomeScreen(vm: AppViewModel, onOpenChat: () -> Unit, onOpenVoice: () -> Unit
     var modeTick by remember { mutableStateOf(RobotState.mode) }
 
     LaunchedEffect(Unit) {
+        RobotState.compactBust = true
         while (true) { now = Date(); modeTick = RobotState.mode; delay(1000) }
+    }
+    DisposableEffect(Unit) {
+        onDispose { RobotState.compactBust = false }
     }
 
     Box(Modifier.fillMaxSize().background(NdBlack)) {
@@ -123,14 +128,13 @@ fun HomeScreen(vm: AppViewModel, onOpenChat: () -> Unit, onOpenVoice: () -> Unit
                 )
             }
 
-            // ---- robot (bounded area; the face is never covered by panels) ----
-            Box(Modifier.weight(0.46f).fillMaxWidth()) {
-                RobotView(Modifier.fillMaxSize())
-            }
+            // The 3D scene is the full-screen background (RobotView above); compact-bust
+            // camera framing keeps the face in this clear zone, above the panels.
+            Spacer(Modifier.weight(0.42f))
 
             // ---- holographic panels: grid below the robot ----
             Column(
-                Modifier.weight(0.54f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                Modifier.weight(0.58f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

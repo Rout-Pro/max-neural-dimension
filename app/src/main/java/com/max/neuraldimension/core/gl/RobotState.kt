@@ -15,4 +15,6 @@ object RobotState {
     @Volatile var reducedMotion: Boolean = false
     /** Assistant display name used on dashboards. */
     @Volatile var assistantName: String = "MAX"
+    /** Home dashboard: frame the bust in the upper screen area so panels below never touch the face. */
+    @Volatile var compactBust: Boolean = false
 }
