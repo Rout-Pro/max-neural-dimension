@@ -91,7 +91,6 @@ interface TaskDao {
     suspend fun delete(t: TaskItem)
 }
 
-@Database(entities = [Conversation::class, Message::class, TaskItem::class], version = 2, exportSchema = false)
 val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE messages ADD COLUMN attachmentName TEXT")
@@ -100,6 +99,7 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+@Database(entities = [Conversation::class, Message::class, TaskItem::class], version = 2, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun chatDao(): ChatDao
     abstract fun taskDao(): TaskDao

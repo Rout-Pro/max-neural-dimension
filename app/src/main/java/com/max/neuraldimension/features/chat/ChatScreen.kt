@@ -196,6 +196,8 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            val shown = if (incognito) incognitoMessages else messages
+            val lastAssistantId = shown.lastOrNull { it.role == "assistant" }?.id
             if (shown.isEmpty()) {
                 item {
                     Column(
@@ -217,8 +219,6 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
                     }
                 }
             }
-            val shown = if (incognito) incognitoMessages else messages
-            val lastAssistantId = shown.lastOrNull { it.role == "assistant" }?.id
             items(shown.asReversed(), key = { it.id }) { m ->
                 MessageBubble(
                     m,
