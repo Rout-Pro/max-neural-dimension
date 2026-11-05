@@ -54,6 +54,9 @@ interface ChatDao {
     @Query("DELETE FROM messages WHERE conversationId = :cid")
     suspend fun deleteMessagesFor(cid: Long)
 
+    @Query("DELETE FROM messages WHERE conversationId = :cid AND id > :mid")
+    suspend fun deleteMessagesAfter(cid: Long, mid: Long)
+
     @Query("SELECT * FROM messages WHERE conversationId = :cid ORDER BY ts ASC")
     fun messages(cid: Long): Flow<List<Message>>
 

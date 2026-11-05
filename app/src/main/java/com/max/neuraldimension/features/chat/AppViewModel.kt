@@ -82,12 +82,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Core exchange used by chat and voice: stores user message, streams assistant reply, returns it. */
-    suspend fun generateAndStore(text: String): String {
+    suspend fun generateAndStore(text: String, storeUser: Boolean = true): String {
         sending.value = true
         try {
             val s = settings.value
             val cid = ensureConversation(text)
-            db.chatDao().insertMessage(Message(conversationId = cid, role = "user", text = text))
+            if (storeUser) db.chatDao().insertMessage(Message(conversationId = cid, role = "user", text = text))
             if (!backend.isConfigured(s)) {
                 db.chatDao().insertMessage(
                     Message(conversationId = cid, role = "assistant", text = "SETUP_REQUIRED::backend"))
@@ -135,6 +135,31 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         RobotState.mode = RobotState.Mode.ERROR
         viewModelScope.launch { delay(3500); if (RobotState.mode == RobotState.Mode.ERROR) RobotState.mode = RobotState.Mode.IDLE }
     }
+
+    /** Regenerate the reply to the most recent user message in the open conversation. */
+    fun regenerateLast() {
+        val cid = currentConversationId.value ?: return
+        if (sending.value) return
+        viewModelScope.launch {
+            val msgs = db.chatDao().messages(cid).first()
+            val lastUser = msgs.lastOrNull { it.role == "user" } ?: return@launch
+            db.chatDao().deleteMessagesAfter(cid, lastUser.id)
+            generateAndStore(lastUser.text, storeUser = false)
+        }
+    }
+
+    /** Edit a user message and regenerate everything after it. */
+    fun editUserMessage(m: Message, newText: String) {
+        val t = newText.trim()
+        if (t.isBlank() || sending.value || m.role != "user") return
+        viewModelScope.launch {
+            db.chatDao().updateMessageText(m.id, t)
+            db.chatDao().deleteMessagesAfter(m.conversationId, m.id)
+            generateAndStore(t, storeUser = false)
+        }
+    }
+
+    suspend fun searchMessages(q: String): List<Message> = db.chatDao().search(q)
 
     fun newConversation() { currentConversationId.value = null }
 

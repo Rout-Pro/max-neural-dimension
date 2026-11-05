@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,11 +27,16 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,6 +45,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +71,7 @@ import com.max.neuraldimension.core.theme.NdViolet
 import com.max.neuraldimension.core.theme.NdWarn
 import com.max.neuraldimension.data.db.Conversation
 import com.max.neuraldimension.data.db.Message
+import kotlinx.coroutines.launch
 
 @Composable
 fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
@@ -74,6 +82,12 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
     val settings by vm.settings.collectAsState()
     var input by remember { mutableStateOf("") }
     var menuOpen by remember { mutableStateOf(false) }
+    var renameOpen by remember { mutableStateOf(false) }
+    var searchOpen by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<Message>>(emptyList()) }
+    var editTarget by remember { mutableStateOf<Message?>(null) }
+    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val clipboard = LocalClipboardManager.current
 
@@ -110,8 +124,14 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
             IconButton(onClick = { vm.newConversation() }) {
                 Icon(Icons.Default.Add, contentDescription = "New chat", tint = NdLavender)
             }
+            IconButton(onClick = { searchOpen = true; searchQuery = ""; searchResults = emptyList() }) {
+                Icon(Icons.Default.Search, contentDescription = "Search history", tint = NdLavender)
+            }
             val cur = conversations.firstOrNull { it.id == currentId }
             if (cur != null) {
+                IconButton(onClick = { renameOpen = true }) {
+                    Icon(Icons.Default.Edit, contentDescription = "Rename chat", tint = NdLavender)
+                }
                 IconButton(onClick = { vm.deleteConversation(cur) }) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete chat", tint = NdMuted)
                 }
@@ -143,12 +163,110 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
                     }
                 }
             }
+            val lastAssistantId = messages.lastOrNull { it.role == "assistant" }?.id
             items(messages.asReversed(), key = { it.id }) { m ->
-                MessageBubble(m, onCopy = { clipboard.setText(AnnotatedString(m.text)) }, onOpenSettings = onOpenSettings)
+                MessageBubble(
+                    m,
+                    isLastAssistant = m.id == lastAssistantId,
+                    onCopy = { clipboard.setText(AnnotatedString(m.text)) },
+                    onOpenSettings = onOpenSettings,
+                    onEdit = { editTarget = m },
+                    onRegenerate = { vm.regenerateLast() }
+                )
             }
             if (sending) {
                 item { Text("Thinking...", color = NdMuted, fontSize = 12.sp, modifier = Modifier.padding(6.dp)) }
             }
+        }
+
+        // ---- rename dialog ----
+        val cur2 = conversations.firstOrNull { it.id == currentId }
+        if (renameOpen && cur2 != null) {
+            var title by remember(cur2.id) { mutableStateOf(cur2.title) }
+            AlertDialog(
+                onDismissRequest = { renameOpen = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (title.isNotBlank()) vm.renameConversation(cur2, title.trim())
+                        renameOpen = false
+                    }) { Text("Save", color = NdLavender) }
+                },
+                dismissButton = { TextButton(onClick = { renameOpen = false }) { Text("Cancel", color = NdMuted) } },
+                title = { Text("Rename conversation", color = NdSilver) },
+                text = {
+                    OutlinedTextField(
+                        value = title, onValueChange = { title = it }, singleLine = true,
+                        textStyle = TextStyle(color = NdSilver, fontSize = 14.sp)
+                    )
+                },
+                containerColor = NdPanelDeep
+            )
+        }
+
+        // ---- search dialog ----
+        if (searchOpen) {
+            AlertDialog(
+                onDismissRequest = { searchOpen = false },
+                confirmButton = { TextButton(onClick = { searchOpen = false }) { Text("Close", color = NdLavender) } },
+                title = { Text("Search history", color = NdSilver) },
+                text = {
+                    Column {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { q ->
+                                searchQuery = q
+                                if (q.length >= 2) scope.launch { searchResults = vm.searchMessages(q.trim()) }
+                                else searchResults = emptyList()
+                            },
+                            singleLine = true,
+                            placeholder = { Text("Type to search messages", color = NdMuted, fontSize = 13.sp) },
+                            textStyle = TextStyle(color = NdSilver, fontSize = 14.sp)
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        LazyColumn(Modifier.heightIn(max = 280.dp)) {
+                            items(searchResults, key = { it.id }) { r ->
+                                Column(
+                                    Modifier.fillMaxWidth().padding(vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        (if (r.role == "user") "You: " else "${settings.assistantName}: ") + r.text.take(90),
+                                        color = NdSilver, fontSize = 13.sp,
+                                        modifier = Modifier.padding(bottom = 2.dp)
+                                    )
+                                    TextButton(onClick = {
+                                        vm.selectConversation(r.conversationId)
+                                        searchOpen = false
+                                    }) { Text("Open conversation", color = NdNeon, fontSize = 12.sp) }
+                                }
+                            }
+                        }
+                    }
+                },
+                containerColor = NdPanelDeep
+            )
+        }
+
+        // ---- edit user message dialog ----
+        editTarget?.let { em ->
+            var edited by remember(em.id) { mutableStateOf(em.text) }
+            AlertDialog(
+                onDismissRequest = { editTarget = null },
+                confirmButton = {
+                    TextButton(onClick = {
+                        vm.editUserMessage(em, edited)
+                        editTarget = null
+                    }) { Text("Save & resend", color = NdLavender) }
+                },
+                dismissButton = { TextButton(onClick = { editTarget = null }) { Text("Cancel", color = NdMuted) } },
+                title = { Text("Edit message", color = NdSilver) },
+                text = {
+                    OutlinedTextField(
+                        value = edited, onValueChange = { edited = it },
+                        textStyle = TextStyle(color = NdSilver, fontSize = 14.sp)
+                    )
+                },
+                containerColor = NdPanelDeep
+            )
         }
 
         // ---- input ----
@@ -184,7 +302,14 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun MessageBubble(m: Message, onCopy: () -> Unit, onOpenSettings: () -> Unit) {
+private fun MessageBubble(
+    m: Message,
+    isLastAssistant: Boolean,
+    onCopy: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onEdit: () -> Unit,
+    onRegenerate: () -> Unit
+) {
     val isUser = m.role == "user"
     Box(Modifier.fillMaxWidth()) {
         Column(
@@ -217,8 +342,17 @@ private fun MessageBubble(m: Message, onCopy: () -> Unit, onOpenSettings: () -> 
                 }
                 else -> {
                     SelectionContainer { MarkdownText(m.text, if (isUser) NdSilver else NdSilver) }
-                    if (!isUser) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        if (isUser) {
+                            IconButton(onClick = onEdit, modifier = Modifier.size(22.dp)) {
+                                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = NdMuted, modifier = Modifier.size(14.dp))
+                            }
+                        } else {
+                            if (isLastAssistant) {
+                                IconButton(onClick = onRegenerate, modifier = Modifier.size(22.dp)) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "Regenerate", tint = NdMuted, modifier = Modifier.size(14.dp))
+                                }
+                            }
                             IconButton(onClick = onCopy, modifier = Modifier.size(22.dp)) {
                                 Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = NdMuted, modifier = Modifier.size(14.dp))
                             }

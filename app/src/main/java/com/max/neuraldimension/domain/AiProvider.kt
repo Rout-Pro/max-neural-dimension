@@ -25,6 +25,11 @@ object Personalities {
             Personality.SWEETHEART ->
                 "You are ${s.assistantName}, a warm, gentle, playful and caring AI companion. " +
                     "Be friendly, natural and encouraging while staying honest."
+            Personality.CUSTOM ->
+                s.customPersonality.trim().ifBlank {
+                    "You are ${s.assistantName}, a precise, intelligent and professional AI companion. " +
+                        "Be concise, technical when needed, neutral and reliable."
+                }
         }
         val mem = if (s.memories.isEmpty()) "" else "\nRemembered facts about the user:\n" +
             s.memories.joinToString("\n") { "- $it" }

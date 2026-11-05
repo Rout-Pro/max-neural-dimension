@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "max_settings")
 
-enum class Personality(val label: String) { PROFESSIONAL("Professional"), SWEETHEART("Sweetheart") }
+enum class Personality(val label: String) { PROFESSIONAL("Professional"), SWEETHEART("Sweetheart"), CUSTOM("Custom") }
 
 /**
  * Blueprint Part 11: provider secret keys live on a secure backend, never in the
@@ -26,6 +26,7 @@ data class MaxSettings(
     val appToken: String = "",
     val thinkingMode: Boolean = false,
     val personality: Personality = Personality.PROFESSIONAL,
+    val customPersonality: String = "",
     val speechRate: Float = 1.0f,
     val language: String = "en-IN",
     val animIntensity: Float = 1.0f,
@@ -44,6 +45,7 @@ class SettingsRepository(private val context: Context) {
         val APP_TOKEN = stringPreferencesKey("app_token")
         val THINKING = booleanPreferencesKey("thinking_mode")
         val PERSONALITY = stringPreferencesKey("personality")
+        val CUSTOM_PERSONALITY = stringPreferencesKey("custom_personality")
         val SPEECH_RATE = floatPreferencesKey("speech_rate")
         val LANGUAGE = stringPreferencesKey("language")
         val ANIM_INTENSITY = floatPreferencesKey("anim_intensity")
@@ -63,6 +65,7 @@ class SettingsRepository(private val context: Context) {
             p[K.APP_TOKEN] = n.appToken.trim()
             p[K.THINKING] = n.thinkingMode
             p[K.PERSONALITY] = n.personality.name
+            p[K.CUSTOM_PERSONALITY] = n.customPersonality
             p[K.SPEECH_RATE] = n.speechRate
             p[K.LANGUAGE] = n.language
             p[K.ANIM_INTENSITY] = n.animIntensity
@@ -79,6 +82,7 @@ class SettingsRepository(private val context: Context) {
         appToken = p[K.APP_TOKEN] ?: "",
         thinkingMode = p[K.THINKING] ?: false,
         personality = p[K.PERSONALITY]?.let { runCatching { Personality.valueOf(it) }.getOrNull() } ?: Personality.PROFESSIONAL,
+        customPersonality = p[K.CUSTOM_PERSONALITY] ?: "",
         speechRate = p[K.SPEECH_RATE] ?: 1.0f,
         language = p[K.LANGUAGE] ?: "en-IN",
         animIntensity = p[K.ANIM_INTENSITY] ?: 1.0f,

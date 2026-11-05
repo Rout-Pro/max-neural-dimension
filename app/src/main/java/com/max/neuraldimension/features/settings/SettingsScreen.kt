@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material3.OutlinedTextField
 import com.max.neuraldimension.core.theme.NdBlack
 import com.max.neuraldimension.core.theme.NdLavender
 import com.max.neuraldimension.core.theme.NdMuted
@@ -97,6 +98,19 @@ fun SettingsScreen(vm: AppViewModel) {
         Section("Personality") {
             PickerRow("Mode", s.personality.label, Personality.entries.map { it.label }) { idx ->
                 scope.launch { vm.settingsRepo.update { it.copy(personality = Personality.entries[idx]) } }
+            }
+            if (s.personality == Personality.CUSTOM) {
+                var custom by remember { mutableStateOf(s.customPersonality) }
+                OutlinedTextField(
+                    value = custom,
+                    onValueChange = { custom = it },
+                    placeholder = { Text("Describe how MAX should behave...", color = NdMuted, fontSize = 13.sp) },
+                    textStyle = TextStyle(color = NdSilver, fontSize = 14.sp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                TextButton(onClick = {
+                    scope.launch { vm.settingsRepo.update { it.copy(customPersonality = custom.trim()) } }
+                }) { Text("Save personality", color = NdNeon) }
             }
         }
 
