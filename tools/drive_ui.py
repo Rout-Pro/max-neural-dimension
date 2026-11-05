@@ -211,11 +211,18 @@ def settle(timeout=90):
     print('SETtle: ANR storm outlasted budget'); sys.stdout.flush()
     return False
 
+def env_blocked(where):
+    shot('env-blocked-' + where)
+    print('ENV-BLOCKED at ' + where + ': emulator ANR storm outlasted settle budget; aborting to avoid vacuous checks')
+    sys.stdout.flush()
+    sys.exit(1)
+
 def relaunch():
     adb('shell', 'am', 'force-stop', PKG)
     adb('shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1')
     time.sleep(10)
-    settle(90)
+    if not settle(90):
+        env_blocked('relaunch')
 
 def list_app_files():
     r = adb('shell', 'run-as', PKG, 'ls', 'files')
@@ -230,7 +237,8 @@ def assert_text(t, xml):
     print(('PASS ' if ok else 'FAIL ') + 'expect text: ' + t); sys.stdout.flush()
     return ok
 
-settle(120)   # let a fresh emulator finish boot jank before any driving
+if not settle(120):   # let a fresh emulator finish boot jank before any driving
+    env_blocked('start')
 
 OLD_APK = os.environ.get('ND_OLD_APK', '/tmp/old.apk')
 NEW_APK = os.environ.get('ND_NEW_APK', 'app/build/outputs/apk/debug/NeuralDimension-2.0.apk')
