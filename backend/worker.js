@@ -112,7 +112,12 @@ async function chatGemini(env, messages, mode, system) {
     if (!transient || attempt === 2) {
       return json({ error: `gemini ${upstream.status}: ${detail.slice(0, 300)}` }, 502);
     }
-    await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+    // Honor provider Retry-After when present (capped 8s); else bounded backoff.
+    const ra = parseFloat(upstream.headers.get("retry-after") || "");
+    const waitMs = Number.isFinite(ra) && ra > 0
+      ? Math.min(ra * 1000, 8000)
+      : 2000 * (attempt + 1);
+    await new Promise((r) => setTimeout(r, waitMs));
   }
   if (!upstream || !upstream.ok || !upstream.body) {
     return json({ error: "gemini unavailable after retries" }, 502);
