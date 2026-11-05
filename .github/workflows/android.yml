@@ -23,7 +23,7 @@ jobs:
           APK=app/build/outputs/apk/release/app-release-unsigned.apk
           MANIFEST=$("$AAPT" dump xmltree "$APK" AndroidManifest.xml)
           echo "$MANIFEST" | grep -i "cleartext" || { echo "::error::explicit usesCleartextTraffic attribute missing"; exit 1; }
-          echo "$MANIFEST" | grep "usesCleartextTraffic.*=0x0" || { echo "::error::usesCleartextTraffic is not explicitly false"; exit 1; }
+          echo "$MANIFEST" | grep -E "usesCleartextTraffic.*0x0[[:space:]]*$" || { echo "::error::usesCleartextTraffic is not explicitly false"; exit 1; }
           if echo "$MANIFEST" | grep -q "debuggable"; then echo "::error::debuggable attribute present in release"; exit 1; fi
           if echo "$MANIFEST" | grep -q "networkSecurityConfig"; then echo "::error::unexpected networkSecurityConfig in release"; exit 1; fi
           if "$AAPT" list -a "$APK" | grep -q "nd_debug_network"; then echo "::error::cleartext mock config leaked into the distributed APK"; exit 1; fi
