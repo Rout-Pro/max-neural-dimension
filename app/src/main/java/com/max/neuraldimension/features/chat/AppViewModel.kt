@@ -52,6 +52,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val sending = MutableStateFlow(false)
     val connectionTest = MutableStateFlow<String?>(null)
 
+    /** Part 13: incognito - in-memory only, never written to Room. */
+    val incognito = MutableStateFlow(false)
+    val incognitoMessages = MutableStateFlow<List<Message>>(emptyList())
+
+    fun toggleIncognito() {
+        incognito.value = !incognito.value
+        if (!incognito.value) incognitoMessages.value = emptyList()
+    }
+
     /** One-shot text queued from the home input, consumed by the chat screen. */
     val pendingChatText = MutableStateFlow<String?>(null)
 
@@ -86,21 +95,50 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         sending.value = true
         try {
             val s = settings.value
-            val cid = ensureConversation(text)
-            if (storeUser) db.chatDao().insertMessage(Message(conversationId = cid, role = "user", text = text))
+            val cid = if (incognito.value) -1L else ensureConversation(text)
+            if (storeUser) {
+                if (incognito.value) {
+                    incognitoMessages.value = incognitoMessages.value +
+                        Message(id = -System.currentTimeMillis() - 1, conversationId = -1, role = "user", text = text)
+                } else {
+                    db.chatDao().insertMessage(Message(conversationId = cid, role = "user", text = text))
+                }
+            }
             if (!backend.isConfigured(s)) {
-                db.chatDao().insertMessage(
-                    Message(conversationId = cid, role = "assistant", text = "SETUP_REQUIRED::backend"))
+                val setupMsg = Message(id = if (incognito.value) -System.currentTimeMillis() else 0,
+                    conversationId = cid, role = "assistant", text = "SETUP_REQUIRED::backend")
+                if (incognito.value) incognitoMessages.value = incognitoMessages.value + setupMsg
+                else db.chatDao().insertMessage(setupMsg)
                 RobotState.mode = RobotState.Mode.CONFUSED
                 viewModelScope.launch { delay(4000); if (RobotState.mode == RobotState.Mode.CONFUSED) RobotState.mode = RobotState.Mode.IDLE }
                 return ""
             }
             RobotState.mode = RobotState.Mode.THINKING
-            val history = db.chatDao().messages(cid).first()
-                .filter { !it.text.startsWith("SETUP_REQUIRED::") && !it.text.startsWith("ERROR::") }
-                .takeLast(24)
-                .map { ChatTurn(it.role, it.text) }
-            val aid = db.chatDao().insertMessage(Message(conversationId = cid, role = "assistant", text = ""))
+            val history = if (incognito.value) {
+                incognitoMessages.value
+                    .filter { !it.text.startsWith("SETUP_REQUIRED::") && !it.text.startsWith("ERROR::") }
+                    .takeLast(24)
+                    .map { ChatTurn(it.role, it.text) }
+            } else {
+                db.chatDao().messages(cid).first()
+                    .filter { !it.text.startsWith("SETUP_REQUIRED::") && !it.text.startsWith("ERROR::") }
+                    .takeLast(24)
+                    .map { ChatTurn(it.role, it.text) }
+            }
+            val aid: Long
+            if (incognito.value) {
+                aid = -System.currentTimeMillis()
+                incognitoMessages.value = incognitoMessages.value + Message(id = aid, conversationId = -1, role = "assistant", text = "")
+            } else {
+                aid = db.chatDao().insertMessage(Message(conversationId = cid, role = "assistant", text = ""))
+            }
+            fun writeAssistant(t: String) {
+                if (incognito.value) {
+                    incognitoMessages.value = incognitoMessages.value.map { if (it.id == aid) it.copy(text = t) else it }
+                } else {
+                    viewModelScope.launch { db.chatDao().updateMessageText(aid, t) }
+                }
+            }
             val sb = StringBuilder()
             var lastWrite = 0L
             try {
@@ -109,20 +147,20 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     val now = android.os.SystemClock.uptimeMillis()
                     if (now - lastWrite > 250) {
                         lastWrite = now
-                        viewModelScope.launch { db.chatDao().updateMessageText(aid, sb.toString()) }
+                        writeAssistant(sb.toString())
                     }
                 }
-                db.chatDao().updateMessageText(aid, sb.toString())
+                writeAssistant(sb.toString())
                 RobotState.mode = RobotState.Mode.IDLE
                 return sb.toString()
             } catch (e: AiException) {
                 val msg = "ERROR::" + (e.message ?: "provider error")
-                db.chatDao().updateMessageText(aid, msg)
+                writeAssistant(msg)
                 flashError()
                 return ""
             } catch (e: Exception) {
                 val msg = "ERROR::" + (e.message ?: e.javaClass.simpleName)
-                db.chatDao().updateMessageText(aid, msg)
+                writeAssistant(msg)
                 flashError()
                 return ""
             }

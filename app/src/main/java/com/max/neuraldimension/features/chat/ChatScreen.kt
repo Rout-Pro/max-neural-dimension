@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -78,6 +80,8 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
     val conversations by vm.conversations.collectAsState()
     val messages by vm.messages.collectAsState()
     val sending by vm.sending.collectAsState()
+    val incognito by vm.incognito.collectAsState()
+    val incognitoMessages by vm.incognitoMessages.collectAsState()
     val currentId by vm.currentConversationId.collectAsState()
     val settings by vm.settings.collectAsState()
     var input by remember { mutableStateOf("") }
@@ -95,8 +99,10 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
     LaunchedEffect(pending) {
         pending?.let { vm.pendingChatText.value = null; vm.send(it) }
     }
-    LaunchedEffect(messages.size, messages.lastOrNull()?.text?.length) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(0)
+    val scrollCount = if (incognito) incognitoMessages.size else messages.size
+    val scrollTail = (if (incognito) incognitoMessages else messages).lastOrNull()?.text?.length
+    LaunchedEffect(scrollCount, scrollTail, incognito) {
+        if (scrollCount > 0) listState.animateScrollToItem(0)
     }
 
     Column(Modifier.fillMaxSize().background(NdBlack).statusBarsPadding().imePadding()) {
@@ -124,6 +130,13 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
             IconButton(onClick = { vm.newConversation() }) {
                 Icon(Icons.Default.Add, contentDescription = "New chat", tint = NdLavender)
             }
+            IconButton(onClick = { vm.toggleIncognito() }) {
+                Icon(
+                    if (incognito) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                    contentDescription = "Incognito",
+                    tint = if (incognito) NdNeon else NdMuted
+                )
+            }
             IconButton(onClick = { searchOpen = true; searchQuery = ""; searchResults = emptyList() }) {
                 Icon(Icons.Default.Search, contentDescription = "Search history", tint = NdLavender)
             }
@@ -146,13 +159,17 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (messages.isEmpty()) {
+            if (shown.isEmpty()) {
                 item {
                     Column(
                         Modifier.fillMaxWidth().padding(top = 60.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("Start a conversation with ${settings.assistantName}", color = NdMuted, fontSize = 14.sp)
+                        Text(
+                            if (incognito) "Incognito: nothing here is saved"
+                            else "Start a conversation with ${settings.assistantName}",
+                            color = NdMuted, fontSize = 14.sp
+                        )
                         if (settings.backendUrl.isBlank()) {
                             Spacer(Modifier.height(10.dp))
                             Text(
@@ -163,8 +180,9 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
                     }
                 }
             }
-            val lastAssistantId = messages.lastOrNull { it.role == "assistant" }?.id
-            items(messages.asReversed(), key = { it.id }) { m ->
+            val shown = if (incognito) incognitoMessages else messages
+            val lastAssistantId = shown.lastOrNull { it.role == "assistant" }?.id
+            items(shown.asReversed(), key = { it.id }) { m ->
                 MessageBubble(
                     m,
                     isLastAssistant = m.id == lastAssistantId,
