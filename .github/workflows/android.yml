@@ -26,10 +26,10 @@ jobs:
         run: |
           echo "$ND_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/nd.keystore"
           APKSIGNER=$(ls "$ANDROID_HOME/build-tools/"*/apksigner | sort -V | tail -1)
-          "$APKSIGNER" sign --ks "$RUNNER_TEMP/nd.keystore" --ks-pass "pass:$ND_KEYSTORE_PASSWORD" --ks-key-alias "$ND_KEY_ALIAS" --key-pass "pass:$ND_KEY_PASSWORD" --out app/build/outputs/apk/debug/NeuralDimension.apk app/build/outputs/apk/debug/app-debug.apk
+          "$APKSIGNER" sign --ks "$RUNNER_TEMP/nd.keystore" --ks-pass "pass:$ND_KEYSTORE_PASSWORD" --ks-key-alias "$ND_KEY_ALIAS" --key-pass "pass:$ND_KEY_PASSWORD" --out app/build/outputs/apk/debug/NeuralDimension-2.0.apk app/build/outputs/apk/debug/app-debug.apk
           rm -f "$RUNNER_TEMP/nd.keystore"
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: neuraldimension-apk
-          path: app/build/outputs/apk/debug/NeuralDimension.apk
+          path: app/build/outputs/apk/debug/NeuralDimension-2.0.apk
