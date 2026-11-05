@@ -154,17 +154,41 @@ if MODE == 'seed':
     poll_text(SEED_MSG, 30) or fail('seed message bubble not visible')
     time.sleep(8)  # let the instant DNS failure settle into an error bubble
     shot('seed-chat')
+    r = adb('shell', 'run-as', PKG, 'ls', '-l', 'files/databases', 'files/datastore')
+    print('pre-upgrade app data:\n' + (r.stdout or r.stderr or ''))
+    sys.stdout.flush()
     print('SEED OK'); sys.stdout.flush()
 elif MODE == 'verify':
     adb('shell', 'am', 'force-stop', PKG)
     launch()
-    tap_text('Chat', exact=True) or fail('Chat tab')
-    poll_text(SEED_MSG, 40) or fail('seeded message missing after in-place upgrade')
+    results = {}
+    # 1. settings persistence
+    if tap_text('Settings', exact=True):
+        results['settings_url_persisted'] = poll_text(SEED_URL, 25)
+        shot('upgraded-settings')
+    else:
+        results['settings_url_persisted'] = False
+    # 2. active conversation shows the seeded message
+    if tap_text('Chat', exact=True):
+        results['message_visible'] = poll_text(SEED_MSG, 40)
+    else:
+        results['message_visible'] = False
     shot('upgraded-chat')
-    tap_text('Settings', exact=True) or fail('Settings tab')
-    poll_text(SEED_URL, 25) or fail('seeded backend URL missing after in-place upgrade')
-    shot('upgraded-settings')
-    print('UPGRADE VERIFY PASS'); sys.stdout.flush()
+    # 3. triage: does the conversation still exist in the picker at all?
+    results['conversation_in_picker'] = None
+    if not results['message_visible']:
+        if tap_text('New conversation', timeout=6) or tap_text('Conversations', timeout=6):
+            time.sleep(2)
+            results['conversation_in_picker'] = 'Hardening seed message' in dump()
+            shot('upgraded-picker')
+    for k, v in results.items():
+        print('UPGRADE-CHECK %s=%s' % (k, v))
+    sys.stdout.flush()
+    if results['settings_url_persisted'] and results['message_visible']:
+        print('UPGRADE VERIFY PASS'); sys.stdout.flush()
+    else:
+        print('UPGRADE VERIFY FAIL'); sys.stdout.flush()
+        sys.exit(1)
 else:
     print('usage: upgrade_check.py [seed|verify]')
     sys.exit(2)
