@@ -531,6 +531,8 @@ if BACKEND_TEST:
     shot('p2-incognito-on')
     filesD = set(list_app_files().split())
     inc_files = filesD - filesC
+    if PICKER['ok']:
+        assert_true('incognito attachment never written to disk', len(inc_files) == 0)
     relaunch()   # force-stop + cold start while incognito was active
     tap_nav('Chat')
     time.sleep(3)

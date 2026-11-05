@@ -108,8 +108,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { generateAndStore(text, attachment = attachment) }
     }
 
-    /** Attachment picked in the UI; bytes kept on disk, base64 read only when sending. */
-    data class PendingAttachment(val name: String, val mime: String, val path: String)
+    /**
+     * Attachment picked in the UI. Bytes stay in memory; a disk copy (path) exists only
+     * for non-incognito chats, where the message is stored and the file backs its history.
+     */
+    data class PendingAttachment(val name: String, val mime: String, val bytes: ByteArray, val path: String?)
 
     /** Core exchange used by chat and voice: stores user message, streams assistant reply, returns it. */
     suspend fun generateAndStore(text: String, storeUser: Boolean = true, attachment: PendingAttachment? = null): String {
@@ -167,9 +170,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             var lastWrite = 0L
             try {
                 val atts = attachment?.let {
-                    val bytes = java.io.File(it.path).readBytes()
                     listOf(com.max.neuraldimension.domain.AttachmentData(
-                        it.name, it.mime, android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)))
+                        it.name, it.mime, android.util.Base64.encodeToString(it.bytes, android.util.Base64.NO_WRAP)))
                 } ?: emptyList()
                 backend.streamChat(s, history, atts) { tok ->
                     sb.append(tok)

@@ -116,10 +116,15 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
                         !supported -> attachError = "Unsupported file type ($mime). Images, PDF and plain text only."
                         bytes == null -> attachError = "Could not read that file."
                         bytes.size > 7_000_000 -> attachError = "File too large (about 7 MB max)."
+                        vm.incognito.value -> {
+                            // Incognito must leave nothing on disk: keep bytes in memory only.
+                            pendingAttachment = AppViewModel.PendingAttachment(name, mime, bytes, null)
+                            attachError = null
+                        }
                         else -> {
                             val f = java.io.File(context.filesDir, "att_${System.currentTimeMillis()}_$name")
                             f.writeBytes(bytes)
-                            pendingAttachment = AppViewModel.PendingAttachment(name, mime, f.absolutePath)
+                            pendingAttachment = AppViewModel.PendingAttachment(name, mime, bytes, f.absolutePath)
                             attachError = null
                         }
                     }
@@ -205,10 +210,17 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            if (incognito) "Incognito: nothing here is saved"
+                            if (incognito) "Incognito: not saved to your chat history"
                             else "Start a conversation with ${settings.assistantName}",
                             color = NdMuted, fontSize = 14.sp
                         )
+                        if (incognito) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "Replies still go through your secure backend.",
+                                color = NdMuted, fontSize = 11.sp
+                            )
+                        }
                         if (settings.backendUrl.isBlank()) {
                             Spacer(Modifier.height(10.dp))
                             Text(
