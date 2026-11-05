@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, hardening-phase1]
   workflow_dispatch:
 
 jobs:
@@ -15,8 +15,21 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Assemble debug APK
-        run: bash gradlew :app:assembleDebug --no-daemon --stacktrace
+      - name: Assemble release APK
+        run: bash gradlew :app:assembleRelease --no-daemon --stacktrace
+      - name: Verify distributed APK stays HTTPS-only and test-hook-free
+        run: |
+          AAPT=$(ls "$ANDROID_HOME/build-tools/"*/aapt | head -1)
+          APK=app/build/outputs/apk/release/app-release-unsigned.apk
+          MANIFEST=$("$AAPT" dump xmltree "$APK" AndroidManifest.xml)
+          echo "$MANIFEST" | grep -i "cleartext" || { echo "::error::explicit usesCleartextTraffic attribute missing"; exit 1; }
+          echo "$MANIFEST" | grep "usesCleartextTraffic.*=0x0" || { echo "::error::usesCleartextTraffic is not explicitly false"; exit 1; }
+          if echo "$MANIFEST" | grep -q "debuggable"; then echo "::error::debuggable attribute present in release"; exit 1; fi
+          if echo "$MANIFEST" | grep -q "networkSecurityConfig"; then echo "::error::unexpected networkSecurityConfig in release"; exit 1; fi
+          if "$AAPT" list -a "$APK" | grep -q "nd_debug_network"; then echo "::error::cleartext mock config leaked into the distributed APK"; exit 1; fi
+          "$AAPT" dump badging "$APK" | grep "versionCode='3'" || { echo "::error::versionCode is not 3"; exit 1; }
+          python3 tools/verify_release.py "$APK"
+          echo "OK: distributed APK is release, HTTPS-only, hook-free, versionCode 3"
       - name: Sign APK (persistent key)
         env:
           ND_KEYSTORE_BASE64: ${{ secrets.ND_KEYSTORE_BASE64 }}
@@ -26,10 +39,54 @@ jobs:
         run: |
           echo "$ND_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/nd.keystore"
           APKSIGNER=$(ls "$ANDROID_HOME/build-tools/"*/apksigner | sort -V | tail -1)
-          "$APKSIGNER" sign --ks "$RUNNER_TEMP/nd.keystore" --ks-pass "pass:$ND_KEYSTORE_PASSWORD" --ks-key-alias "$ND_KEY_ALIAS" --key-pass "pass:$ND_KEY_PASSWORD" --out app/build/outputs/apk/debug/NeuralDimension-2.0.apk app/build/outputs/apk/debug/app-debug.apk
+          "$APKSIGNER" sign --ks "$RUNNER_TEMP/nd.keystore" --ks-pass "pass:$ND_KEYSTORE_PASSWORD" --ks-key-alias "$ND_KEY_ALIAS" --key-pass "pass:$ND_KEY_PASSWORD" --out app/build/outputs/apk/release/NeuralDimension-2.0.1.apk app/build/outputs/apk/release/app-release-unsigned.apk
           rm -f "$RUNNER_TEMP/nd.keystore"
+          EXPECTED="46:C1:0F:04:BC:51:F1:9E:04:5C:75:31:28:1B:EA:82:0D:0D:92:21:E5:33:EF:81:C6:B0:BA:50:11:B7:B2:FA"
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/release/NeuralDimension-2.0.1.apk | tee /tmp/certs.txt
+          grep -q "SHA-256 digest: $EXPECTED" /tmp/certs.txt || { echo "::error::signing cert changed - update path broken"; exit 1; }
+          echo "OK: signing cert matches the delivered Phase 1 APK"
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: neuraldimension-apk
-          path: app/build/outputs/apk/debug/NeuralDimension-2.0.apk
+          name: neuraldimension-hardening-apk
+          path: app/build/outputs/apk/release/NeuralDimension-2.0.1.apk
+
+  upgrade-test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download hardened APK
+        uses: actions/download-artifact@v4
+        with:
+          name: neuraldimension-hardening-apk
+          path: hardened/
+      - name: Download delivered Phase 1 APK (upgrade source)
+        run: curl -sL -o /tmp/phase1.apk "https://github.com/${{ github.repository }}/releases/download/v2.0.0-test/NeuralDimension-2.0.apk" && ls -la /tmp/phase1.apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Boot emulator, install Phase 1, seed, upgrade in place, verify persistence
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: |
+            mkdir -p shots
+            adb install /tmp/phase1.apk
+            python3 tools/upgrade_check.py seed
+            adb install -r hardened/NeuralDimension-2.0.1.apk
+            python3 tools/upgrade_check.py verify
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nd-upgrade-shots
+          path: shots/

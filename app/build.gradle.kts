@@ -13,8 +13,8 @@ android {
         applicationId = "com.max.neuraldimension"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = 3
+        versionName = "2.0.1"
         // CI-only UI-test hook. The distributed APK (Build workflow) is compiled
         // without -PND_TEST_HOOK, so the hook is absent from what users install.
         buildConfigField("boolean", "ND_TEST_HOOK", (project.findProperty("ND_TEST_HOOK") as String?) ?: "false")
