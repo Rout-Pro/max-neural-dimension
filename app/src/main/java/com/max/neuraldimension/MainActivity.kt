@@ -50,6 +50,18 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // CI-only: seed backend config for automated end-to-end tests. Compiled
+        // out of the distributed APK (ND_TEST_HOOK=false there).
+        if (BuildConfig.ND_TEST_HOOK) {
+            val url = intent.getStringExtra("nd_backend_url").orEmpty()
+            val tok = intent.getStringExtra("nd_app_token").orEmpty()
+            if (url.isNotBlank()) {
+                val repo = com.max.neuraldimension.data.prefs.SettingsRepository(applicationContext)
+                kotlinx.coroutines.runBlocking {
+                    repo.update { it.copy(backendUrl = url.trim(), appToken = tok.trim()) }
+                }
+            }
+        }
         setContent {
             NdTheme {
                 val vm: AppViewModel = viewModel()

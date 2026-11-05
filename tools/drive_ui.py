@@ -186,16 +186,20 @@ for _ in range(8):
     time.sleep(3)
 
 if BACKEND_TEST:
-    # Configure the secure backend via the real Settings UI (token arrives via
-    # GitHub Actions secrets -> env; never in repo or APK).
+    # Seed backend config via the CI-only intent hook (ND_TEST_HOOK build).
+    # Values come from GitHub Actions secrets -> env -> process argv on the
+    # ephemeral runner; never printed, never in repo/APK/artifacts.
+    adb('shell', 'am', 'force-stop', PKG)
+    adb('shell', 'am', 'start', '-n', PKG + '/.MainActivity',
+        '--es', 'nd_backend_url', "'" + BACKEND_URL + "'",
+        '--es', 'nd_app_token', "'" + APP_TOKEN + "'")
+    time.sleep(8)
     tap_nav('Settings')
     time.sleep(3)
-    ok_url = set_field('Backend URL', BACKEND_URL)
-    ok_tok = set_field('App token', APP_TOKEN)
-    if not (ok_url and ok_tok):
-        print('BACKEND FIELD SET FAILED')
-    dismiss_keyboard()
-    tap_text('Test connection', timeout=15)
+    for _ in range(5):
+        if tap_text('Test connection', timeout=3):
+            break
+        swipe_up()
     time.sleep(6)
     shot('00-backend-test')
     xml = dump()

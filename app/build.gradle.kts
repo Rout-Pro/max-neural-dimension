@@ -15,9 +15,15 @@ android {
         targetSdk = 35
         versionCode = 2
         versionName = "2.0"
+        // CI-only UI-test hook. The distributed APK (Build workflow) is compiled
+        // without -PND_TEST_HOOK, so the hook is absent from what users install.
+        buildConfigField("boolean", "ND_TEST_HOOK", (project.findProperty("ND_TEST_HOOK") as String?) ?: "false")
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
