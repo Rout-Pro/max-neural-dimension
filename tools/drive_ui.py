@@ -55,6 +55,20 @@ def tap_text(t, timeout=12, exact=False):
 def type_text(s):
     adb('shell', 'input', 'text', s.replace(' ', '%s'))
 
+def dismiss_keyboard():
+    # BACK collapses the IME without navigating when a keyboard is showing.
+    # Needed before bottom-nav taps: covered Compose nodes are still in the
+    # uiautomator tree, so a blind tap lands on a keyboard key instead.
+    adb('shell', 'input', 'keyevent', '4')
+    time.sleep(1)
+
+def tap_nav(label, timeout=12):
+    # Bottom-nav tap that survives an open keyboard.
+    if tap_text(label, timeout=3, exact=True):
+        return True
+    dismiss_keyboard()
+    return tap_text(label, timeout=timeout, exact=True)
+
 def assert_text(t, xml):
     ok = t.lower() in xml.lower()
     print(('PASS ' if ok else 'FAIL ') + 'expect text: ' + t); sys.stdout.flush()
@@ -84,7 +98,7 @@ tap_text('Close')
 time.sleep(1)
 
 # Chat: send a message; with no key configured the app must show the honest setup card
-tap_text('Chat', exact=True)
+tap_nav('Chat')
 time.sleep(3)
 xml = dump()
 assert_text('New conversation', xml)
@@ -102,7 +116,8 @@ xml = dump()
 assert_text('Secure backend is not connected yet', xml)
 
 # Voice tab
-tap_text('Voice', exact=True)
+dismiss_keyboard()
+tap_nav('Voice')
 time.sleep(4)
 shot('05-voice')
 xml = dump()
@@ -115,11 +130,13 @@ adb('logcat', '-c')
 adb('shell', 'screenrecord', '--time-limit', '30', '/sdcard/max_voice.mp4', '&')
 time.sleep(1)
 if tap_text('Test MAX voice'):
-    time.sleep(2)
-    shot('06-voice-speaking')
     time.sleep(3)
-    shot('07-voice-speaking-2')
+    shot('06-voice-speaking')
+    xml = dump()
+    assert_text('SPEAKING', xml)
     time.sleep(4)
+    shot('07-voice-speaking-2')
+    time.sleep(5)
     shot('08-voice-after')
 time.sleep(1)
 adb('shell', 'pkill', '-f', 'screenrecord')
@@ -130,7 +147,7 @@ with open('shots/max_voice_logcat.txt', 'w') as f:
     f.write(r.stdout)
 
 # Tools
-tap_text('Tools', exact=True)
+tap_nav('Tools')
 time.sleep(3)
 shot('09-tools')
 xml = dump()
@@ -138,7 +155,7 @@ assert_text('Flashlight', xml)
 assert_text('Battery', xml)
 
 # Settings
-tap_text('Settings', exact=True)
+tap_nav('Settings')
 time.sleep(3)
 shot('10-settings')
 xml = dump()
