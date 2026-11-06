@@ -659,7 +659,7 @@ if BACKEND_TEST:
             _dl = time.time() + 20
             while time.time() < _dl:
                 xml = dump()
-                if 'File too large (about 7 MB max.)' in xml:
+                if 'File too large' in xml:  # app string is 'File too large (about 7 MB max).' - match stable prefix only
                     _tl_ok = True
                     break
                 time.sleep(1)
