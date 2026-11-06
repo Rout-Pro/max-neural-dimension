@@ -838,6 +838,43 @@ if BACKEND_TEST:
     print('PHASE2-COVERAGE picker=' + ('ok' if PICKER['ok'] else 'MISS'))
     sys.stdout.flush()
 
+if want('habits'):
+    # === Phase 6b: Habits + Expenses (Room-backed, local) ===
+    dismiss_keyboard()
+    tap_nav('Tools', timeout=8)
+    time.sleep(3)
+    for _ in range(4):
+        swipe_up(); time.sleep(1)
+        if 'Add a habit...' in dump():
+            break
+    if tap_text('Add a habit...', timeout=8):
+        time.sleep(1)
+        type_text('nd-test-habit')
+        time.sleep(1)
+        tap_text('Save habit', timeout=5)
+        time.sleep(2)
+    xml = dump()
+    assert_true('habits: habit listed', 'nd-test-habit' in xml and 'streak 0' in xml)
+    if tap_text('Mark today', timeout=6):
+        time.sleep(2)
+        assert_true('habits: streak becomes 1 (observed state change)', 'streak 1' in dump())
+    if tap_text('Expense label...', timeout=8):
+        time.sleep(1)
+        type_text('nd-test-coffee')
+        time.sleep(1)
+        dismiss_keyboard()
+        if tap_text('Rs.', exact=True, timeout=5):
+            time.sleep(1)
+            type_text('120')
+            time.sleep(1)
+            dismiss_keyboard()
+        tap_text('Save expense', timeout=5)
+        time.sleep(2)
+    xml = dump()
+    assert_true('habits: expense listed', 'nd-test-coffee' in xml and '120.00' in xml)
+    assert_true('habits: total updated (observed state change)', 'Total: Rs. 120.00' in xml)
+    shot('p6-habits-expenses')
+
 if want('remind'):
     # === Phase 6: Part 17 slice - Notes (Room) + Reminders (WorkManager -> real notification) ===
     dismiss_keyboard()

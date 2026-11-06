@@ -122,6 +122,50 @@ interface ReminderDao {
     suspend fun delete(r: Reminder)
 }
 
+@Entity(tableName = "habits")
+data class Habit(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val lastDoneDay: Long = -1,   // epochDay of last completion, -1 = never
+    val streak: Int = 0
+)
+
+@Entity(tableName = "expenses")
+data class Expense(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val label: String,
+    val amountCents: Long,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Dao
+interface HabitDao {
+    @Query("SELECT * FROM habits ORDER BY createdAt DESC")
+    fun habits(): Flow<List<Habit>>
+
+    @Insert
+    suspend fun insert(h: Habit): Long
+
+    @Update
+    suspend fun update(h: Habit)
+
+    @Delete
+    suspend fun delete(h: Habit)
+}
+
+@Dao
+interface ExpenseDao {
+    @Query("SELECT * FROM expenses ORDER BY createdAt DESC")
+    fun expenses(): Flow<List<Expense>>
+
+    @Insert
+    suspend fun insert(e: Expense): Long
+
+    @Delete
+    suspend fun delete(e: Expense)
+}
+
 @Dao
 interface TaskDao {
     @Query("SELECT * FROM tasks ORDER BY done ASC, createdAt DESC")
@@ -145,6 +189,13 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS habits (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL, createdAt INTEGER NOT NULL, lastDoneDay INTEGER NOT NULL DEFAULT -1, streak INTEGER NOT NULL DEFAULT 0)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS expenses (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, label TEXT NOT NULL, amountCents INTEGER NOT NULL, createdAt INTEGER NOT NULL)")
+    }
+}
+
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, text TEXT NOT NULL, createdAt INTEGER NOT NULL)")
@@ -152,18 +203,20 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
-@Database(entities = [Conversation::class, Message::class, TaskItem::class, Note::class, Reminder::class], version = 3, exportSchema = false)
+@Database(entities = [Conversation::class, Message::class, TaskItem::class, Note::class, Reminder::class, Habit::class, Expense::class], version = 4, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun chatDao(): ChatDao
     abstract fun taskDao(): TaskDao
     abstract fun noteDao(): NoteDao
     abstract fun reminderDao(): ReminderDao
+    abstract fun habitDao(): HabitDao
+    abstract fun expenseDao(): ExpenseDao
 
     companion object {
         @Volatile private var instance: AppDb? = null
         fun get(context: Context): AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "max.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build().also { instance = it }
         }
     }

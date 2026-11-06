@@ -201,6 +201,79 @@ fun ToolsScreen(vm: AppViewModel) {
             remStatus?.let { Text(it, color = NdMuted, fontSize = 11.sp) }
         }
 
+        // Habits (Room-backed streaks)
+        ToolCard("Habits") {
+            val habits by vm.habits.collectAsState()
+            var newHabit by remember { mutableStateOf("") }
+            val today = System.currentTimeMillis() / 86_400_000L
+            habits.take(5).forEach { h ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(h.name + " (streak " + h.streak + ")", color = NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    if (h.lastDoneDay == today) {
+                        Text("Done today", color = NdNeon, fontSize = 11.sp)
+                    } else {
+                        TextButton(onClick = { vm.markHabitToday(h) }) { Text("Mark today", color = NdLavender, fontSize = 11.sp) }
+                    }
+                    TextButton(onClick = { vm.deleteHabit(h) }) { Text("Delete", color = NdMuted, fontSize = 11.sp) }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = newHabit, onValueChange = { newHabit = it },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = NdSilver, fontSize = 13.sp),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(NdLavender),
+                    modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+                    decorationBox = { inner ->
+                        if (newHabit.isEmpty()) Text("Add a habit...", color = NdMuted, fontSize = 13.sp)
+                        inner()
+                    }
+                )
+                TextButton(onClick = { vm.addHabit(newHabit); newHabit = "" }) { Text("Save habit", color = NdLavender) }
+            }
+        }
+
+        // Expenses (Room-backed)
+        ToolCard("Expenses") {
+            val expenses by vm.expenses.collectAsState()
+            var exLabel by remember { mutableStateOf("") }
+            var exAmount by remember { mutableStateOf("") }
+            val totalCents = expenses.sumOf { it.amountCents }
+            Text("Total: Rs. ${totalCents / 100}.${(totalCents % 100).toString().padStart(2, '0')}", color = NdLavender, fontSize = 12.sp)
+            expenses.take(5).forEach { e ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(e.label + " - Rs. ${e.amountCents / 100}.${(e.amountCents % 100).toString().padStart(2, '0')}",
+                        color = NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { vm.deleteExpense(e) }) { Text("Delete", color = NdMuted, fontSize = 11.sp) }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = exLabel, onValueChange = { exLabel = it },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = NdSilver, fontSize = 13.sp),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(NdLavender),
+                    modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+                    decorationBox = { inner ->
+                        if (exLabel.isEmpty()) Text("Expense label...", color = NdMuted, fontSize = 13.sp)
+                        inner()
+                    }
+                )
+                androidx.compose.foundation.text.BasicTextField(
+                    value = exAmount, onValueChange = { exAmount = it.filter { c -> c.isDigit() }.take(7) },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = NdSilver, fontSize = 13.sp),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(NdLavender),
+                    modifier = Modifier.width(80.dp).padding(vertical = 8.dp),
+                    decorationBox = { inner ->
+                        if (exAmount.isEmpty()) Text("Rs.", color = NdMuted, fontSize = 13.sp)
+                        inner()
+                    }
+                )
+                TextButton(onClick = {
+                    val rupees = exAmount.toLongOrNull()
+                    if (rupees != null) { vm.addExpense(exLabel, rupees * 100); exLabel = ""; exAmount = "" }
+                }) { Text("Save expense", color = NdLavender) }
+            }
+        }
+
         // Flashlight (real torch via CameraManager)
         ToolCard("Flashlight") {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -301,7 +374,7 @@ fun ToolsScreen(vm: AppViewModel) {
 
         ToolCard("Coming in later phases") {
             Text(
-                "Calendar and weather, habit and expense tracking, daily briefing, image and video generation. Each arrives only when it genuinely works.",
+                "Calendar and weather, daily briefing, image and video generation. Each arrives only when it genuinely works.",
                 color = NdMuted, fontSize = 12.sp
             )
         }

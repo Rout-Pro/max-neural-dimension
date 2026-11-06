@@ -7,6 +7,8 @@ import com.max.neuraldimension.core.gl.RobotState
 import com.max.neuraldimension.data.db.AppDb
 import com.max.neuraldimension.data.db.Conversation
 import com.max.neuraldimension.data.db.Message
+import com.max.neuraldimension.data.db.Expense
+import com.max.neuraldimension.data.db.Habit
 import com.max.neuraldimension.data.db.Note
 import com.max.neuraldimension.data.db.Reminder
 import com.max.neuraldimension.data.db.TaskItem
@@ -300,6 +302,39 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             db.reminderDao().delete(r)
         }
+    }
+
+    val habits: StateFlow<List<Habit>> =
+        db.habitDao().habits().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val expenses: StateFlow<List<Expense>> =
+        db.expenseDao().expenses().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun addHabit(name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch { db.habitDao().insert(Habit(name = name.trim())) }
+    }
+
+    fun markHabitToday(h: Habit) {
+        viewModelScope.launch {
+            val today = System.currentTimeMillis() / 86_400_000L
+            if (h.lastDoneDay == today) return@launch
+            val newStreak = if (h.lastDoneDay == today - 1) h.streak + 1 else 1
+            db.habitDao().update(h.copy(lastDoneDay = today, streak = newStreak))
+        }
+    }
+
+    fun deleteHabit(h: Habit) {
+        viewModelScope.launch { db.habitDao().delete(h) }
+    }
+
+    fun addExpense(label: String, amountCents: Long) {
+        if (label.isBlank() || amountCents <= 0) return
+        viewModelScope.launch { db.expenseDao().insert(Expense(label = label.trim(), amountCents = amountCents)) }
+    }
+
+    fun deleteExpense(e: Expense) {
+        viewModelScope.launch { db.expenseDao().delete(e) }
     }
 
     fun addTask(title: String) {
