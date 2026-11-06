@@ -847,15 +847,17 @@ if want('device'):
     assert_true('device: battery shown', 'Battery' in xml)
     assert_true('device: storage shown', 'Storage free' in xml)
     assert_true('device: flashlight card present', 'Flashlight' in xml)
-    for _ in range(4):
+    for _ in range(3):
         swipe_up(); time.sleep(1.5)
     xml = dump()
-    assert_true('device: diagnostics (model/uptime)', 'Model:' in xml and 'Uptime' in xml)
     assert_true('device: RAM shown', 'RAM free' in xml)
+    swipe_up(); time.sleep(1.5)
+    xml = dump()
+    assert_true('device: diagnostics (model/uptime)', 'Model:' in xml and 'Uptime' in xml)
     assert_true('device: open apps lists launchable apps', 'Open apps' in xml and 'Settings' in xml)
     assert_true('device: media volume control', 'Media volume' in xml)
     assert_true('device: notifications shortcut', 'Notifications' in xml)
-    assert_true('device: camera shortcut', 'Camera' in xml)
+    assert_true('device: camera shortcut', xml.count('Camera') >= 2)  # app entry + shortcut button
     shot('p5-tools-device')
 
 if want('studio'):
