@@ -178,6 +178,29 @@ if tap_text('Message MAX', timeout=10):
     dismiss_keyboard()
 if not msg_ok:
     fail_shot('seed-msg-fail')
+else:
+    # Conversation-history proof: restart the app and re-open the seeded
+    # conversation from the picker. A live bubble alone only proves the VM
+    # state; surviving force-stop + picker selection proves the Room row.
+    sh('adb', 'shell', 'am', 'force-stop', 'com.max.neuraldimension')
+    time.sleep(2)
+    if not settle_and_verify_launch():
+        fail_shot('seed-relaunch-blocked')
+        print('SEED-RESULT: ENV-BLOCKED (relaunch after force-stop)', flush=True)
+        sys.exit(2)
+    time.sleep(3)
+    tap_text('Chat')
+    time.sleep(2)
+    hist_ok = False
+    if tap_text('Conversations', timeout=10):  # ArrowDropDown content-desc
+        time.sleep(2)
+        if tap_text('seed-message-v1', timeout=10):  # dropdown item, title.take(30)
+            time.sleep(3)
+            hist_ok = 'seed-message-v1' in dump()
+    if not hist_ok:
+        fail_shot('seed-history-fail')
+        print('seed history check FAILED: message did not survive restart/picker', flush=True)
+    msg_ok = hist_ok
 
 # --- settings (DataStore): profile name + backend URL ---
 tap_text('Settings')
