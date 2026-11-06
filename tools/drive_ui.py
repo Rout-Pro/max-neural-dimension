@@ -852,7 +852,14 @@ if want('voice3'):
     tap_nav('Settings', timeout=8)
     time.sleep(3)
     xml = dump()
+    for _ in range(5):
+        if 'Speech rate' in xml:
+            break
+        swipe_up()
+        xml = dump()
     assert_true('voice3: settings Voice section', 'Speech rate' in xml)
+    assert_true('voice3: voice picker row present when voices exist',
+                ('Voice' in xml))
     shot('p3-voice-settings')
 
 if want('tail'):
