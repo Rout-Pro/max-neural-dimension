@@ -317,7 +317,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun markHabitToday(h: Habit) {
         viewModelScope.launch {
-            val today = System.currentTimeMillis() / 86_400_000L
+            val today = java.time.LocalDate.now().toEpochDay()
             if (h.lastDoneDay == today) return@launch
             val newStreak = if (h.lastDoneDay == today - 1) h.streak + 1 else 1
             db.habitDao().update(h.copy(lastDoneDay = today, streak = newStreak))
@@ -358,7 +358,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val openTasks = tasks.value.count { !it.done }
         val now = System.currentTimeMillis()
         val next = reminders.value.filter { !it.fired && it.triggerAt > now }.minByOrNull { it.triggerAt }
-        val today = now / 86_400_000L
+        val today = java.time.LocalDate.now().toEpochDay()
         val habitsDone = habits.value.count { it.lastDoneDay == today }
         val totalHabits = habits.value.size
         val parts = mutableListOf<String>()

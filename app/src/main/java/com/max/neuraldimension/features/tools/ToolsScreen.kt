@@ -213,7 +213,7 @@ fun ToolsScreen(vm: AppViewModel) {
         ToolCard("Habits") {
             val habits by vm.habits.collectAsState()
             var newHabit by remember { mutableStateOf("") }
-            val today = System.currentTimeMillis() / 86_400_000L
+            val today = java.time.LocalDate.now().toEpochDay()
             habits.take(5).forEach { h ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(h.name + " (streak " + h.streak + ")", color = NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f))
@@ -266,7 +266,12 @@ fun ToolsScreen(vm: AppViewModel) {
                     }
                 )
                 androidx.compose.foundation.text.BasicTextField(
-                    value = exAmount, onValueChange = { exAmount = it.filter { c -> c.isDigit() }.take(7) },
+                    value = exAmount, onValueChange = { raw ->
+                        val f = raw.filter { c -> c.isDigit() || c == '.' }
+                        val dot = f.indexOf('.')
+                        exAmount = if (dot >= 0) f.substring(0, dot + 1) + f.substring(dot + 1).filter { c -> c.isDigit() }.take(2)
+                                   else f.take(7)
+                    },
                     textStyle = androidx.compose.ui.text.TextStyle(color = NdSilver, fontSize = 13.sp),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(NdLavender),
                     modifier = Modifier.width(80.dp).padding(vertical = 8.dp),
@@ -276,8 +281,9 @@ fun ToolsScreen(vm: AppViewModel) {
                     }
                 )
                 TextButton(onClick = {
-                    val rupees = exAmount.toLongOrNull()
-                    if (rupees != null) { vm.addExpense(exLabel, rupees * 100); exLabel = ""; exAmount = "" }
+                    val cents = exAmount.toDoubleOrNull()
+                        ?.let { kotlin.math.round(it * 100).toLong() }
+                    if (cents != null && cents > 0) { vm.addExpense(exLabel, cents); exLabel = ""; exAmount = "" }
                 }) { Text("Save expense", color = NdLavender) }
             }
         }
@@ -295,7 +301,7 @@ fun ToolsScreen(vm: AppViewModel) {
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(NdLavender),
                     modifier = Modifier.weight(1f).padding(vertical = 8.dp),
                     decorationBox = { inner ->
-                        if (city.isEmpty()) Text("City (e.g. Bhubaneswar)...", color = NdMuted, fontSize = 13.sp)
+                        if (city.isEmpty()) Text("City name...", color = NdMuted, fontSize = 13.sp)
                         inner()
                     }
                 )
@@ -303,7 +309,7 @@ fun ToolsScreen(vm: AppViewModel) {
                     Text(if (busy) "Loading..." else "Check weather", color = NdLavender, fontSize = 12.sp)
                 }
             }
-            Text("Source: Open-Meteo over HTTPS - free, no key; only the city name is sent. Needs network.",
+            Text("Source: Open-Meteo over HTTPS - free, no key. The geocoding service receives the city name; the forecast service receives the resolved coordinates; both see normal connection data (like your IP). Needs network.",
                 color = NdMuted, fontSize = 10.sp)
         }
 

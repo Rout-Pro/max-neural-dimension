@@ -849,7 +849,7 @@ if want('weather'):
     if tap_text('Refresh briefing', timeout=6):
         time.sleep(2)
         assert_true('weather: briefing aggregates local data', 'open task' in dump())
-    if tap_text('City (e.g. Bhubaneswar)...', timeout=8):
+    if tap_text('City name...', timeout=8):
         time.sleep(1)
         type_text('Bhubaneswar')
         time.sleep(1)
