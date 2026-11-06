@@ -19,6 +19,8 @@ Scenarios:
                     equality must FAIL on the merged 'RoutSeedUserV1'
   T10 clear-resisted - fake field refuses to clear (ND_FAKE_IGNORE_CLEAR); the
                     seed must FAIL honestly, never type into a non-empty field
+  T12 wrong-version - fake reports versionCode 3 under the candidate gate; the
+                    run must fail at the gate BEFORE any feature section runs
 """
 import os, subprocess, sys, shutil, time, json
 
@@ -212,6 +214,12 @@ if want_run('T1'):
         _st['settings']['userName'] == 'SeedUserV1', _st['settings']['userName'])
   check('T1 IME-gated BACK safety: zero ungated app exits',
         _st.get('back_exits', 0) == 0, 'back_exits=%s' % _st.get('back_exits'))
+  check('T1 candidate gate passed and was enforced',
+        'CANDIDATE-GATE version ok: versionCode=4 versionName=2.0' in r['out'],
+        [l for l in r['out'].splitlines() if 'CANDIDATE-GATE' in l])
+  check('T1 mutation budget: exactly 2 installs (old + upgrade), 0 uninstalls',
+        _st.get('installs') == 2 and _st.get('uninstalls', 0) == 0,
+        'installs=%s uninstalls=%s force_stops=%s' % (_st.get('installs'), _st.get('uninstalls'), _st.get('force_stops')))
 
 # ---- T1n mutant: pre-scroll-fix driver must FAIL on scroll geometry ----
 if want_run('T1n'):
@@ -316,6 +324,21 @@ if want_run('T11m'):
   _st = json.load(open(os.path.join(r['dir'], 'state', 'state.json')))
   check('T11m uninstall happened exactly once', _st.get('uninstalls', 0) == 1,
         'uninstalls=%s' % _st.get('uninstalls'))
+
+# ---- T12: wrong binary under test must fail AT the gate, before sections ----
+if want_run('T12'):
+  r = run_scenario('T12-wrong-version', SECTIONS, extra_env={'ND_FAKE_VERSION_CODE': '3'})
+  check('T12 rc=1', r['rc'] == 1, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
+  check('T12 candidate gate FAILs on versionCode 3',
+        'CANDIDATE-GATE FAIL: installed versionCode=3' in r['out'],
+        [l for l in r['out'].splitlines() if 'CANDIDATE-GATE' in l])
+  check('T12 gate pixel exists',
+        os.path.exists(os.path.join(r['dir'], 'shots', 'candidate-gate-fail.png')), '')
+  check('T12 seed completed but NO feature section ever ran',
+        'SEED-RESULT: task=True msg=True name=True url=True' in r['out']
+        and 'expect app-text' not in r['out'] and 'habits:' not in r['out'], '')
+  fails = lines_starting(r['out'], 'FAIL ')
+  check('T12 no assertion cascade after gate', not fails, fails[:5])
 
 ok = all(c['ok'] for c in results['checks'])
 print('ITEST-RESULT: %s (%d/%d checks passed)' % ('ALL-PASS' if ok else 'FAILURES',

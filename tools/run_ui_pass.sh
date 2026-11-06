@@ -20,6 +20,10 @@ else
 fi
 adb install -r "$APK"
 
+# Wrong binary under test poisons every later assertion (run 42285108996:
+# v2.0.1 left installed, 26-section cascade). Fail fast before driving.
+python3 tools/verify_candidate.py --expect-apk "$APK"
+
 if [ "${BUILD_TYPE:-debug}" = "debug" ]; then
   # Debug loop only: pre-launch DataStore byte proof via run-as (release is not
   # debuggable; release preservation is UI-level in the driver). Must run before

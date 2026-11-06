@@ -40,7 +40,7 @@ def default_state():
         'projects': [], 'editor': None, 'console_open': False, 'ran': False,
         'weather': False, 'briefing': False, 'notifications': [],
         'export_notice': False, 'fields': {}, 'scroll': {}, 'launch_count': 0,
-        'back_exits': 0, 'uninstalls': 0,
+        'back_exits': 0, 'uninstalls': 0, 'installs': 0, 'force_stops': 0,
     }
 
 def save(s):
@@ -477,6 +477,7 @@ def main():
     cmd = args[0]
     if cmd == 'install':
         path = args[-1]
+        ninst = s.get('installs', 0) + 1
         if '-r' in args:
             # in-place upgrade: data preserved, process killed
             s['version'] = '2.0.1' if ('old' in path or '2.0.1' in path) else '2.1'
@@ -484,8 +485,10 @@ def main():
             keep = default_state()
             keep['uninstalls'] = s.get('uninstalls', 0)
             keep['back_exits'] = s.get('back_exits', 0)
+            keep['force_stops'] = s.get('force_stops', 0)
             keep['version'] = '2.0.1' if ('old' in path or '2.0.1' in path) else '2.1'
             s = keep
+        s['installs'] = ninst
         s['running'] = False; s['foreground'] = 'launcher'; s['ime'] = False
         s['dropdown'] = False; s['panel'] = False; s['notif_dialog'] = False
         save(s)
@@ -565,6 +568,7 @@ def main():
             return 0
         if a[0] == 'am':
             if a[1] == 'force-stop':
+                s['force_stops'] = s.get('force_stops', 0) + 1
                 s['running'] = False; s['foreground'] = 'launcher'
                 s['ime'] = False; s['dropdown'] = False; s['panel'] = False
             elif a[1] == 'start':
@@ -584,6 +588,8 @@ def main():
                 n = s.get('uninstalls', 0) + 1
                 s = default_state()
                 s['uninstalls'] = n
+            if a[1] == 'path':
+                print('package:/data/app/~~ab12/%s-cd34/base.apk' % PKG)
             save(s)
             return 0
         if a[0] == 'dumpsys':
@@ -599,6 +605,13 @@ def main():
             if a[1] == 'notification':
                 for x in s['notifications']:
                     print(x)
+                return 0
+            if a[1] == 'package':
+                # ND_FAKE_VERSION_CODE simulates a wrong binary under test
+                vc = os.environ.get('ND_FAKE_VERSION_CODE') or ('3' if s['version'] == '2.0.1' else '4')
+                vn = '2.0.1' if s['version'] == '2.0.1' else '2.0'
+                print('    versionCode=%s minSdk=26 targetSdk=34' % vc)
+                print('    versionName=%s' % vn)
                 return 0
         if a[0] == 'ls':
             rel = a[1].lstrip('/').replace('storage/emulated/0/', '', 1)

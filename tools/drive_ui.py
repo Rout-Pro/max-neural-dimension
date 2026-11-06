@@ -345,6 +345,15 @@ _r = adb('shell', 'dumpsys', 'window', 'displays')
 if PKG not in (_r.stdout or ''):
     env_blocked('app-not-foreground-after-relaunch')
 
+# The app being foreground is not enough: it must be the CANDIDATE binary
+# (run 42285108996: v2.0.1 foregrounded and 26 sections cascaded against it).
+_r = subprocess.run([sys.executable, 'tools/verify_candidate.py', '--version-only'])
+if _r.returncode != 0:
+    shot('candidate-gate-fail')
+    print('ENV-BLOCKED at candidate-gate: installed package is not the expected candidate; aborting before feature sections')
+    sys.stdout.flush()
+    sys.exit(1)
+
 OLD_APK = os.environ.get('ND_OLD_APK', '/tmp/old.apk')
 NEW_APK = os.environ.get('ND_NEW_APK') or (
     'app/build/outputs/apk/release/NeuralDimension-release.apk' if RELEASE_GATE
