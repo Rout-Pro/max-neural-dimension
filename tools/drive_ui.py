@@ -867,7 +867,7 @@ if want('remind'):
             dismiss_keyboard()
         tap_text('Schedule', timeout=5)
         time.sleep(2)
-        tap_text('Allow', timeout=4)  # notification permission dialog (API 33+)
+        tap_text('Allow', exact=True, timeout=6)  # dialog BUTTON, not the title substring
         time.sleep(2)
     xml = dump()
     assert_true('remind: reminder listed', 'nd-test-reminder' in xml)
