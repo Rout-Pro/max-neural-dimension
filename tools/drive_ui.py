@@ -83,11 +83,12 @@ def parse_nodes(xml):
         tm = re.search(r'text="([^"]*)"', raw)
         cm = re.search(r'content-desc="([^"]*)"', raw)
         cl = re.search(r'class="([^"]*)"', raw)
+        pk = re.search(r'package="([^"]*)"', raw)
         bm = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', raw)
         if not bm:
             continue
         nodes.append({'text': unesc(tm.group(1)) if tm else '', 'desc': unesc(cm.group(1)) if cm else '',
-                      'cls': cl.group(1) if cl else '',
+                      'cls': cl.group(1) if cl else '', 'pkg': pk.group(1) if pk else '',
                       'b': tuple(int(bm.group(i)) for i in range(1, 5))})
     return nodes
 
@@ -295,6 +296,17 @@ def assert_text(t, xml):
         FAILED_ASSERTIONS.append('expect text: ' + t)
     return ok
 
+def assert_app_text(t, xml):
+    # App-scoped: the text must appear in a node owned by OUR package. A raw
+    # assert_text can be satisfied by the LAUNCHER icon label "Neural Dimension"
+    # (proven run 42233330418: 30 vacuous PASSes on a dead app). uiautomator
+    # stamps every node with its owning package.
+    ok = any(t.lower() in n['text'].lower() and n['pkg'] == PKG for n in parse_nodes(xml))
+    print(('PASS ' if ok else 'FAIL ') + 'expect app-text: ' + t); sys.stdout.flush()
+    if not ok:
+        FAILED_ASSERTIONS.append('expect app-text: ' + t)
+    return ok
+
 import atexit
 @atexit.register
 def _assertion_gate():
@@ -386,9 +398,9 @@ if BACKEND_TEST:
 
 shot('01-home-robot')
 xml = dump()
-assert_text('NEURAL DIMENSION', xml)
-assert_text('AI STATUS', xml)
-assert_text('TASKS', xml)
+assert_app_text('NEURAL DIMENSION', xml)
+assert_app_text('AI STATUS', xml)
+assert_app_text('TASKS', xml)
 
 time.sleep(6)
 shot('02-home-idle-anim')
@@ -488,7 +500,15 @@ if BACKEND_TEST and want('core'):
 elif not BACKEND_TEST:
     shot('04-chat-setup-honest')
     xml = dump()
-    assert_text('Secure backend is not connected yet', xml)
+    # The release flow runs AFTER seeding, so backendUrl is non-blank
+    # (seed-settings-v1.invalid): the app is "configured" (AiProvider.isConfigured
+    # = url.isNotBlank) and the send surfaces an honest ERROR bubble
+    # ("Request failed"), not the setup card. Both are honest rendered states of
+    # the same send path; neither-present is the only failure.
+    _honest = 'Secure backend is not connected yet' in xml
+    _err = 'Request failed' in xml
+    print('chat honest state: setup_card=%s request_failed=%s' % (_honest, _err)); sys.stdout.flush()
+    assert_true('startup chat: honest backend response rendered (setup card or request failure)', _honest or _err)
 
 # ---------- Phase 2 features: MOCK backend (zero provider calls), every section independent ----------
 # Live-provider success stays separately gated on quota recovery; this run verifies
@@ -1149,7 +1169,8 @@ if want('studio'):
     tap_text('Back to projects', timeout=6)
     time.sleep(2)
     xml = dump()
-    assert_true('studio: project listed', 'StudioTest' in xml and 'ReactExp' in xml)
+    _studio_listed = 'StudioTest' in xml and 'ReactExp' in xml
+    assert_true('studio: project listed', _studio_listed)
     tap_text('Delete project', timeout=6)
     time.sleep(2)
     xml = dump()
@@ -1157,7 +1178,10 @@ if want('studio'):
     tap_text('Delete project', timeout=6)
     time.sleep(2)
     xml = dump()
-    assert_true('studio: both projects deleted', 'StudioTest' not in xml and 'ReactExp' not in xml)
+    # Non-vacuous: deletion is only proven when the list was proven BEFORE
+    # deletion (zero-project creation failure must not green this assert).
+    assert_true('studio: both projects deleted (after creation proven)',
+                _studio_listed and 'StudioTest' not in xml and 'ReactExp' not in xml)
 
 if want('voice3'):
     # === Phase 3 voice surface: honest recognition label + voice settings ===
