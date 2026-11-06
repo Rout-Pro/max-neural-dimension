@@ -90,7 +90,7 @@ if tap_below('Your name'):
 url_ok = False
 if tap_below('Backend URL'):
     time.sleep(1)
-    sh('adb', 'shell', 'input', 'text', 'https://seed-settings-v1.example.com')
+    sh('adb', 'shell', 'input', 'text', 'https://seed-settings-v1.invalid')
     time.sleep(2)
     sh('adb', 'shell', 'input', 'keyevent', 'KEYCODE_BACK')
     time.sleep(1)
