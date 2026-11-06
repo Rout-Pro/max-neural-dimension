@@ -48,7 +48,8 @@
   do not claim offline TTS if the device lacks downloaded voices.
 - STT: the default android.speech.SpeechRecognizer service MAY use network
   recognition (e.g. Google voice typing) - the API alone does not establish
-  on-device/offline processing. On API 33+ prefer explicit
+  on-device/offline processing. On API 31+ (Android 12; verified against the
+  Android SDK reference, data-version-added=31 on both methods) prefer explicit
   SpeechRecognizer.createOnDeviceSpeechRecognizer after checking
   isOnDeviceRecognitionAvailable. If on-device recognition is unavailable, the
   app must say recognition uses the device's speech service (which may use the
