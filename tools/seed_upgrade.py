@@ -135,6 +135,23 @@ def settle_and_verify_launch():
     print('SEED ENV-BLOCKED: app never became foreground', flush=True)
     return False
 
+def app_foreground():
+    r = sh('adb', 'shell', 'dumpsys', 'window', 'displays')
+    return 'com.max.neuraldimension' in (r.stdout or '')
+
+def ensure_app(step):
+    # A BACK with the keyboard already down exits this single-activity app to
+    # the launcher (pixel-proven run 42212127418). Recover instead of missing.
+    if app_foreground():
+        return True
+    print('app not foreground before', step, '- relaunching', flush=True)
+    if settle_and_verify_launch():
+        time.sleep(3)
+        return True
+    fail_shot('seed-relaunch-' + step)
+    print('SEED-RESULT: ENV-BLOCKED (relaunch before %s)' % step, flush=True)
+    sys.exit(2)
+
 if not settle_and_verify_launch():
     fail_shot('seed-blocked')
     print('SEED-RESULT: ENV-BLOCKED (see shots/seed-blocked.png)', flush=True)
@@ -160,7 +177,9 @@ if not task_ok:
     fail_shot('seed-task-fail')
 
 # --- conversation + user message (Room conversations/messages) ---
-dismiss_keyboard()
+# No BACK here: keyboard was already dismissed before Add; another BACK exits
+# the single-activity app to the launcher (run 42212127418, seed-no-chat.png).
+ensure_app('chat')
 tap_text('Chat')
 time.sleep(2)
 msg_ok = False
@@ -203,6 +222,7 @@ else:
     msg_ok = hist_ok
 
 # --- settings (DataStore): profile name + backend URL ---
+ensure_app('settings')
 tap_text('Settings')
 time.sleep(2)
 settings_reached = visible('SECURE BACKEND', scroll=True, tries=8)
