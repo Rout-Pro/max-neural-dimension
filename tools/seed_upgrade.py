@@ -30,9 +30,46 @@ def tap_text(t, timeout=20):
     print('seed MISS', t)
     return False
 
-sh('adb', 'shell', 'monkey', '-p', 'com.max.neuraldimension', '-c', 'android.intent.category.LAUNCHER', '1')
-time.sleep(12)
-tap_text('Tools')
+def settle_and_verify_launch():
+    """Launch the app and wait until its window is truly foreground, riding out
+    the emulator's launcher ANR storms (same pattern as drive_ui.py)."""
+    r = sh('adb', 'shell', 'monkey', '-p', 'com.max.neuraldimension', '-c', 'android.intent.category.LAUNCHER', '1')
+    print('monkey:', (r.stdout or '').strip()[:120], (r.stderr or '').strip()[:120])
+    deadline = time.time() + 180
+    anrs = 0
+    while time.time() < deadline:
+        xml = dump()
+        if 'responding' in xml and 'Wait' in xml:
+            tap_text('Wait', timeout=3)
+            anrs += 1
+            if anrs > 12:
+                print('SEED ENV-BLOCKED: ANR storm outlasted budget')
+                return False
+            continue
+        r = sh('adb', 'shell', 'dumpsys', 'window', 'displays')
+        if 'com.max.neuraldimension' in (r.stdout or ''):
+            print('app foreground after', anrs, 'ANR dismissals')
+            return True
+        time.sleep(3)
+    print('SEED ENV-BLOCKED: app never became foreground')
+    return False
+
+def fail_shot(name):
+    sh('adb', 'shell', 'screencap', '-p', '/sdcard/' + name + '.png')
+    sh('adb', 'pull', '/sdcard/' + name + '.png', 'shots/' + name + '.png')
+
+sh('adb', 'shell', 'mkdir', '-p', '/sdcard/')
+import os
+os.makedirs('shots', exist_ok=True)
+if not settle_and_verify_launch():
+    fail_shot('seed-blocked')
+    print('SEED-RESULT: ENV-BLOCKED (see shots/seed-blocked.png)')
+    sys.exit(2)
+time.sleep(4)
+if not tap_text('Tools', timeout=25):
+    fail_shot('seed-no-tools')
+    print('SEED-RESULT: ENV-BLOCKED (no Tools tab; see shots/seed-no-tools.png)')
+    sys.exit(2)
 time.sleep(3)
 if tap_text('Add a task...'):
     time.sleep(1)

@@ -20,7 +20,7 @@ OPEN: reminder listing/firing/actual notification; habit streak & expense total 
 BLOCKED once by environment: emulator ANR storms (ENV-BLOCK pattern in drive_ui.py).
 
 ## Upgrade/migration gate (release blocker)
-Workflow seeds DELIVERED v2.0.1 via tools/seed_upgrade.py (task, chat message, profile name, backend URL on .invalid TLD), then adb install -r the new build; drive_ui.py section 'upgrade' asserts preserved fields via run-as DB pull + DataStore bytes + UI. First execution 2026-11-06 FAILED AT SEED: all taps missed (app render/dump unverified; seed script lacks the ANR-settle + screenshot-on-failure handling that drive_ui.py has). FIX QUEUED, not yet applied: port settle logic + failure screenshot into seed_upgrade.py, then re-run.
+Workflow seeds DELIVERED v2.0.1 via tools/seed_upgrade.py (task, chat message, profile name, backend URL on .invalid TLD), then adb install -r the new build; drive_ui.py section 'upgrade' asserts preserved fields via run-as DB pull + DataStore bytes + UI. First execution 2026-11-06 FAILED AT SEED: all taps missed (app render/dump unverified; seed script lacks the ANR-settle + screenshot-on-failure handling that drive_ui.py has). FIX APPLIED (post-handoff commit): seed_upgrade.py now has settle_and_verify_launch() with ANR-storm riding, foreground verification via dumpsys, failure screenshots uploaded via the shots/ artifact, and ENV-BLOCK exit code 2 distinct from seed-failure 1. Next pass just re-runs it.
 versionCode MUST exceed 3 (v2.0.1) for upgrades to install — head has 4; keep the invariant.
 
 ## Release-evidence requirements before ANY new release (owner: main)
