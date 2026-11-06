@@ -346,38 +346,54 @@ if PKG not in (_r.stdout or ''):
     env_blocked('app-not-foreground-after-relaunch')
 
 OLD_APK = os.environ.get('ND_OLD_APK', '/tmp/old.apk')
-NEW_APK = os.environ.get('ND_NEW_APK', 'app/build/outputs/apk/debug/NeuralDimension-2.0.apk')
+NEW_APK = os.environ.get('ND_NEW_APK') or (
+    'app/build/outputs/apk/release/NeuralDimension-release.apk' if RELEASE_GATE
+    else 'app/build/outputs/apk/debug/NeuralDimension-2.0.apk')
 
-if want('migration'):
+if want('migration') and RELEASE_GATE:
+    # Release runs must NOT take this section: it pm-uninstalls the package
+    # mid-run (wiping the run_ui_pass.sh seed) and installs ND_NEW_APK, whose
+    # default used to be the DEBUG path - missing in release runs, so run
+    # 42285108996 vacuously passed 'migration preserved' on the still-running
+    # v2.0.1 and cascaded 26 FAILs against the wrong binary. Release
+    # preservation evidence is the upgrade(release) section; this section is
+    # debug-loop only.
+    print('migration section skipped in release gate (upgrade(release) owns preservation evidence)')
+    sys.stdout.flush()
+elif want('migration'):
     # ---------- Room 1->2 migration evidence: seed with the RELEASED app, upgrade in place ----------
     if os.path.exists(OLD_APK):
         print('MIGRATION: installing previous release APK'); sys.stdout.flush()
         adb('shell', 'pm', 'uninstall', PKG)
         r = adb('install', OLD_APK)
         print('old install rc:', r.returncode, (r.stdout or '').strip()[-60:]); sys.stdout.flush()
-        relaunch()
-        tap_nav('Chat')
-        time.sleep(3)
-        if tap_text('Message', timeout=8):
-            time.sleep(1)
-            type_text('Migration seed note')
-            time.sleep(1)
-            tap_text('Send', timeout=3)
-        time.sleep(6)
-        dismiss_keyboard()
-        shot('m1-old-seed')
-        r = adb('install', '-r', '-d', NEW_APK)
-        print('upgrade install rc:', r.returncode, (r.stdout or '').strip()[-60:]); sys.stdout.flush()
-        relaunch()
-        tap_nav('Chat')
-        time.sleep(3)
-        tap_text('New conversation', timeout=8)  # header picker
-        time.sleep(2)
-        tap_text('Migration seed note', timeout=8)
-        time.sleep(2)
-        xml = dump()
-        assert_true('migration preserved seeded message', 'Migration seed note' in xml)
-        shot('m2-after-upgrade')
+        # A failed install must never be driven over: gate loudly, never a
+        # vacuous 'preserved' PASS on the still-running previous binary.
+        if assert_true('migration: old APK install succeeded', r.returncode == 0):
+            relaunch()
+            tap_nav('Chat')
+            time.sleep(3)
+            if tap_text('Message', timeout=8):
+                time.sleep(1)
+                type_text('Migration seed note')
+                time.sleep(1)
+                tap_text('Send', timeout=3)
+            time.sleep(6)
+            dismiss_keyboard()
+            shot('m1-old-seed')
+            r = adb('install', '-r', '-d', NEW_APK)
+            print('upgrade install rc:', r.returncode, (r.stdout or '').strip()[-60:]); sys.stdout.flush()
+            if assert_true('migration: upgrade install succeeded', r.returncode == 0):
+                relaunch()
+                tap_nav('Chat')
+                time.sleep(3)
+                tap_text('New conversation', timeout=8)  # header picker
+                time.sleep(2)
+                tap_text('Migration seed note', timeout=8)
+                time.sleep(2)
+                xml = dump()
+                assert_true('migration preserved seeded message', 'Migration seed note' in xml)
+                shot('m2-after-upgrade')
     else:
         print('MIGRATION: old apk not present, skipped'); sys.stdout.flush()
 

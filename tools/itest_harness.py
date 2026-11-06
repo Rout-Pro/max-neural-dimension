@@ -58,6 +58,13 @@ def run_scenario(name, sections, mutant=None, extra_env=None):
         assert block in orig, 'ensure_visible dismiss block not found for mutant'
         open(os.path.join(ND, 'tools', 'drive_ui.py'), 'w').write(
             orig.replace(block, '    # MUTANT: no IME dismiss before scrolling\n    for _ in range(max_swipes):', 1))
+    if mutant == 'migration-in-release':
+        # pre-fix driver: migration section runs in the release gate, wipes the
+        # seed via pm uninstall, and poisons every later section (42285108996)
+        block = "if want('migration') and RELEASE_GATE:"
+        assert block in orig, 'release skip not found for mutant'
+        open(os.path.join(ND, 'tools', 'drive_ui.py'), 'w').write(
+            orig.replace(block, 'if False and want(\'migration\') and RELEASE_GATE:  # MUTANT', 1))
     if mutant == 'no-relaunch':
         block = ("relaunch()\n_r = adb('shell', 'dumpsys', 'window', 'displays')\n"
                  "if PKG not in (_r.stdout or ''):\n    env_blocked('app-not-foreground-after-relaunch')")
@@ -282,6 +289,33 @@ if want_run('T10'):
         'not verifiably empty' in r['out'],
         [l for l in r['out'].splitlines() if 'SEED-RESULT' in l])
   check('T10 seed never claimed name=True', 'name=True' not in r['out'], '')
+
+# ---- T11: release gate must skip migration section (run 42285108996 poison) ----
+if want_run('T11'):
+  r = run_scenario('T11-release-migration-skip', 'migration,upgrade')
+  check('T11 rc=0', r['rc'] == 0, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
+  check('T11 migration skipped in release gate',
+        'migration section skipped in release gate' in r['out'], '')
+  _st = json.load(open(os.path.join(r['dir'], 'state', 'state.json')))
+  check('T11 package never uninstalled mid-run', _st.get('uninstalls', 0) == 0,
+        'uninstalls=%s' % _st.get('uninstalls'))
+  check('T11 upgrade(release) asserts green on surviving seed',
+        'PASS upgrade(release): seeded task visible in UI after migration' in r['out']
+        and 'name field exact value: <SeedUserV1>' in r['out'], '')
+
+# ---- T11m mutant: migration in release must reproduce the 42285108996 poison ----
+if want_run('T11m'):
+  r = run_scenario('T11m-migration-in-release', 'migration,upgrade', mutant='migration-in-release')
+  check('T11m rc!=0', r['rc'] != 0, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
+  check('T11m reproduces 42285108996: seed wiped, upgrade(release) cascade',
+        'FAIL upgrade(release): seeded task visible in UI after migration' in r['out']
+        and 'FAIL upgrade(release): seeded profile name visible in Settings' in r['out'], '')
+  check('T11m reproduces 42285108996: settings back to defaults',
+        'name field exact value: <Rout>' in r['out'],
+        [l for l in r['out'].splitlines() if 'name field exact value' in l])
+  _st = json.load(open(os.path.join(r['dir'], 'state', 'state.json')))
+  check('T11m uninstall happened exactly once', _st.get('uninstalls', 0) == 1,
+        'uninstalls=%s' % _st.get('uninstalls'))
 
 ok = all(c['ok'] for c in results['checks'])
 print('ITEST-RESULT: %s (%d/%d checks passed)' % ('ALL-PASS' if ok else 'FAILURES',

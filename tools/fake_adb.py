@@ -40,7 +40,7 @@ def default_state():
         'projects': [], 'editor': None, 'console_open': False, 'ran': False,
         'weather': False, 'briefing': False, 'notifications': [],
         'export_notice': False, 'fields': {}, 'scroll': {}, 'launch_count': 0,
-        'back_exits': 0,
+        'back_exits': 0, 'uninstalls': 0,
     }
 
 def save(s):
@@ -482,6 +482,8 @@ def main():
             s['version'] = '2.0.1' if ('old' in path or '2.0.1' in path) else '2.1'
         else:
             keep = default_state()
+            keep['uninstalls'] = s.get('uninstalls', 0)
+            keep['back_exits'] = s.get('back_exits', 0)
             keep['version'] = '2.0.1' if ('old' in path or '2.0.1' in path) else '2.1'
             s = keep
         s['running'] = False; s['foreground'] = 'launcher'; s['ime'] = False
@@ -579,7 +581,9 @@ def main():
             return 0
         if a[0] == 'pm':
             if a[1] == 'uninstall':
+                n = s.get('uninstalls', 0) + 1
                 s = default_state()
+                s['uninstalls'] = n
             save(s)
             return 0
         if a[0] == 'dumpsys':
