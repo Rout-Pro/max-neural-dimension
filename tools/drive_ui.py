@@ -112,7 +112,13 @@ def tools_top():
         swipe_down()
 
 def ensure_visible(text, max_swipes=14):
-    """Small swipes until text appears in the dump; avoids jumping past targets."""
+    """Small swipes until text appears in the dump; avoids jumping past targets.
+
+    An open IME breaks this twice over (proven run 42267432732): the shrunken
+    window uncomposes everything under the keyboard, and small swipes starting
+    at y=1800 land ON the keyboard and scroll nothing. Dismiss it first;
+    dismiss_keyboard is IME-gated and never BACKs a closed keyboard."""
+    dismiss_keyboard()
     for _ in range(max_swipes):
         if text in dump():
             return True
@@ -932,9 +938,15 @@ if want('upgrade') and RELEASE_GATE:
     # BELOW its label - a value landed in the wrong field must not green this
     # (fake-model bug proved the substring form can pass cross-field).
     ensure_visible('Your name')
-    name_seen = 'SeedUserV1' in (field_text_below('Your name') or '')
+    # EXACT field equality (main's bar): a merged 'RoutSeedUserV1' (default
+    # userName not cleared by the seed, run 42267432732 pixel) must FAIL.
+    _name_field = (field_text_below('Your name') or '').strip()
+    print('upgrade(release): name field exact value: <%s>' % _name_field); sys.stdout.flush()
+    name_seen = _name_field == 'SeedUserV1'
     ensure_visible('Backend URL')
-    url_seen = 'seed-settings-v1' in (field_text_below('Backend URL') or '')
+    _url_field = (field_text_below('Backend URL') or '').strip()
+    print('upgrade(release): URL field exact value: <%s>' % _url_field); sys.stdout.flush()
+    url_seen = _url_field == 'https://seed-settings-v1.invalid'
     assert_true('upgrade(release): seeded profile name visible in Settings', name_seen)
     assert_true('upgrade(release): seeded backend URL visible in Settings', url_seen)
     shot('upgrade-release-settings')

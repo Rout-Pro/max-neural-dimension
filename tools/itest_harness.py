@@ -13,6 +13,12 @@ Scenarios:
                     FAST with env-blocked pixel, no assertion cascade
   T5 transport    - stderr propagation + nonzero rc through sh -c + run_ui_pass.sh
   T6 workflow     - the checked-in workflow script input is a single line
+  T8 no-ime-dismiss - mutant driver whose ensure_visible never drops the IME;
+                    must reproduce run 42267432732 (swipes eaten in keyboard band)
+  T9 weak-seed    - mutant seed that never clears; the driver's EXACT field
+                    equality must FAIL on the merged 'RoutSeedUserV1'
+  T10 clear-resisted - fake field refuses to clear (ND_FAKE_IGNORE_CLEAR); the
+                    seed must FAIL honestly, never type into a non-empty field
 """
 import os, subprocess, sys, shutil, time, json
 
@@ -38,6 +44,20 @@ def run_scenario(name, sections, mutant=None, extra_env=None):
     os.chdir(ND)
     shutil.rmtree(os.path.join(ND, 'shots'), ignore_errors=True)
     orig = open(os.path.join(ND, 'tools', 'drive_ui.py')).read()
+    orig_seed = open(os.path.join(ND, 'tools', 'seed_upgrade.py')).read()
+    if mutant == 'weak-seed':
+        # pre-verification seed: types without clearing -> merged value must be
+        # caught by the driver's exact field equality (run 42267432732)
+        block = "    if not clear_field_verified('Your name'):"
+        assert block in orig_seed, 'verified-clear block not found for mutant'
+        open(os.path.join(ND, 'tools', 'seed_upgrade.py'), 'w').write(
+            orig_seed.replace(block, '    if False:  # MUTANT weak-seed: no clear, no verify', 1))
+    elif mutant == 'no-ime-dismiss':
+        # pre-IME-fix driver: ensure_visible scrolls with the keyboard open
+        block = '    dismiss_keyboard()\n    for _ in range(max_swipes):'
+        assert block in orig, 'ensure_visible dismiss block not found for mutant'
+        open(os.path.join(ND, 'tools', 'drive_ui.py'), 'w').write(
+            orig.replace(block, '    # MUTANT: no IME dismiss before scrolling\n    for _ in range(max_swipes):', 1))
     if mutant == 'no-relaunch':
         block = ("relaunch()\n_r = adb('shell', 'dumpsys', 'window', 'displays')\n"
                  "if PKG not in (_r.stdout or ''):\n    env_blocked('app-not-foreground-after-relaunch')")
@@ -70,6 +90,7 @@ def run_scenario(name, sections, mutant=None, extra_env=None):
     dur = time.time() - t0
     if mutant:
         open(os.path.join(ND, 'tools', 'drive_ui.py'), 'w').write(orig)
+        open(os.path.join(ND, 'tools', 'seed_upgrade.py'), 'w').write(orig_seed)
     if os.path.isdir(os.path.join(ND, 'shots')):
         shutil.move(os.path.join(ND, 'shots'), os.path.join(d, 'shots'))
     open(os.path.join(d, 'rc'), 'w').write(str(p.returncode))
@@ -182,6 +203,8 @@ if want_run('T1'):
   _st = json.load(open(os.path.join(r['dir'], 'state', 'state.json')))
   check('T7 seeded name EXACT (clear-before-type; default Rout must not merge)',
         _st['settings']['userName'] == 'SeedUserV1', _st['settings']['userName'])
+  check('T1 IME-gated BACK safety: zero ungated app exits',
+        _st.get('back_exits', 0) == 0, 'back_exits=%s' % _st.get('back_exits'))
 
 # ---- T1n mutant: pre-scroll-fix driver must FAIL on scroll geometry ----
 if want_run('T1n'):
@@ -229,6 +252,36 @@ if want_run('T5'):
   r = run_scenario('T5-stderr', SECTIONS, mutant='stderr')
   check('T5 driver rc 3 propagates', r['rc'] == 3, 'rc=%d' % r['rc'])
   check('T5 stderr reaches transport', 'TRACE-SENTINEL' in r['err'], r['err'][:200])
+
+# ---- T8 mutant: pre-IME-fix driver must reproduce run 42267432732 ----
+if want_run('T8'):
+  r = run_scenario('T8-no-ime-dismiss', 'habits,remind', mutant='no-ime-dismiss')
+  check('T8 rc!=0', r['rc'] != 0, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
+  check('T8 reproduces 42267432732: keyboard eats swipes, expenses unreachable',
+        'MISS tap: Expense label...' in r['out'] and 'FAIL habits: expense listed' in r['out'], '')
+  check('T8 reproduces 42267432732: reminder title unreachable under open IME',
+        'MISS tap: Reminder title...' in r['out'] and 'FAIL remind: reminder listed' in r['out'], '')
+
+# ---- T9 mutant: weak seed -> merged value must FAIL the exact assert ----
+if want_run('T9'):
+  r = run_scenario('T9-weak-seed', 'upgrade', mutant='weak-seed')
+  check('T9 rc!=0 (exact-field mismatch must fail)', r['rc'] != 0, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
+  check('T9 exact name assert FAILs on merged value',
+        'FAIL upgrade(release): seeded profile name visible in Settings' in r['out'], '')
+  check('T9 merged value printed for the record',
+        'name field exact value: <RoutSeedUserV1>' in r['out'],
+        [l for l in r['out'].splitlines() if 'name field exact value' in l])
+  check('T9 URL exact assert still passes (empty default typed cleanly)',
+        'PASS upgrade(release): seeded backend URL visible in Settings' in r['out'], '')
+
+# ---- T10: field resists clearing -> seed must fail honestly, never merge ----
+if want_run('T10'):
+  r = run_scenario('T10-clear-resisted', 'upgrade', extra_env={'ND_FAKE_IGNORE_CLEAR': '1'})
+  check('T10 rc!=0 (seed refuses unverifiable field)', r['rc'] != 0, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
+  check('T10 seed reports field not verifiably empty',
+        'not verifiably empty' in r['out'],
+        [l for l in r['out'].splitlines() if 'SEED-RESULT' in l])
+  check('T10 seed never claimed name=True', 'name=True' not in r['out'], '')
 
 ok = all(c['ok'] for c in results['checks'])
 print('ITEST-RESULT: %s (%d/%d checks passed)' % ('ALL-PASS' if ok else 'FAILURES',

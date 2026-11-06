@@ -163,13 +163,44 @@ def visible(marker, scroll=False, tries=6):
             time.sleep(2)
     return marker in dump()
 
+def field_text_below(label):
+    # Reader mirroring tap_field_below geometry (label -> nearest EditText below).
+    ns = parse_nodes(dump())
+    labs = [n for n in ns if any(l.lower().startswith(label.lower()) for l in n['labels'])]
+    edits = [n for n in ns if 'EditText' in n['cls']]
+    for l in labs:
+        cands = [e for e in edits if l['b'][1] - 10 <= e['b'][1] <= l['b'][3] + 260]
+        if cands:
+            e = min(cands, key=lambda e: e['b'][1])
+            return e['labels'][0] if e['labels'] else ''
+    return None
+
 def clear_field():
-    # Fields may be pre-filled (v2.0.1 default userName='Rout' - proven run
-    # 42248503219 pixel: seed typed into it and produced 'RoutSeedUserV1').
+    # Fields may be pre-filled (v2.0.1 default userName='Rout' - run 42267432732
+    # pixel: CTRL+A+DEL alone did NOT clear the Compose BasicTextField, seed
+    # produced 'RoutSeedUserV1' twice). Full driver-proven sequence.
     sh('adb', 'shell', 'input', 'keyevent', '--keycomb', '113', '29')  # CTRL+A
     time.sleep(0.3)
     sh('adb', 'shell', 'input', 'keyevent', '67')                      # DEL
-    time.sleep(0.3)
+    sh('adb', 'shell', 'input', 'keyevent', '123')                     # MOVE_HOME
+    for _ in range(60):
+        sh('adb', 'shell', 'input', 'keyevent', '112')                 # FORWARD_DEL
+    for _ in range(60):
+        sh('adb', 'shell', 'input', 'keyevent', '67')                  # DEL
+
+def clear_field_verified(label):
+    # Never type into an unverified field: clear, then READ BACK the actual
+    # field below the label. An unverifiable clear is an honest seed failure,
+    # not a merged-value pass (main's rule after run 42267432732).
+    for attempt in range(3):
+        clear_field()
+        time.sleep(0.5)
+        v = field_text_below(label)
+        if v is not None and v == '':
+            print('seed field verified empty:', label, flush=True)
+            return True
+        print('seed clear attempt %d for %s not empty' % (attempt + 1, label), flush=True)
+    return False
 
 def tap_field_below(label, timeout=15):
     # Settings Field composable: Text(label) above a BasicTextField. Search
@@ -282,7 +313,10 @@ if not visible('SECURE BACKEND', scroll=True, tries=8):
 name_ok = False
 if tap_field_below('Your name'):
     time.sleep(1)
-    clear_field()
+    if not clear_field_verified('Your name'):
+        fail_shot('seed-name-notcleared')
+        print('SEED-RESULT: task=%s msg=%s name=False url=False (name field not verifiably empty)' % (task_ok, msg_ok), flush=True)
+        sys.exit(1)
     type_text('SeedUserV1')
     time.sleep(1)
     dismiss_keyboard()
@@ -293,7 +327,10 @@ if not name_ok:
 url_ok = False
 if tap_field_below('Backend URL'):
     time.sleep(1)
-    clear_field()
+    if not clear_field_verified('Backend URL'):
+        fail_shot('seed-url-notcleared')
+        print('SEED-RESULT: task=%s msg=%s name=%s url=False (url field not verifiably empty)' % (task_ok, msg_ok, name_ok), flush=True)
+        sys.exit(1)
     type_text('https://seed-settings-v1.invalid')
     time.sleep(1)
     dismiss_keyboard()

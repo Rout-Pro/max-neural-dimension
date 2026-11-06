@@ -18,6 +18,7 @@ PKG = 'com.max.neuraldimension'
 LAUNCHER_PKG = 'com.google.android.apps.nexuslauncher'
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
 VIEW_TOP, VIEW_BOTTOM = 140, 2050   # content viewport; nav bar sits at 2100
+IME_TOP = 1150   # open keyboard covers ~y1150-2400 (real ~y1200+, run 42267432732)
 
 def sp(*p):
     return os.path.join(ST, 'fs', *p)
@@ -39,6 +40,7 @@ def default_state():
         'projects': [], 'editor': None, 'console_open': False, 'ran': False,
         'weather': False, 'briefing': False, 'notifications': [],
         'export_notice': False, 'fields': {}, 'scroll': {}, 'launch_count': 0,
+        'back_exits': 0,
     }
 
 def save(s):
@@ -232,10 +234,13 @@ def screen_nodes(s):
     n, _bottom = stack(s, scr)
     if scr in SCROLLABLE:
         off = s.get('scroll', {}).get(scr, 0)
+        # adjustResize: with the IME open the window shrinks to above the
+        # keyboard; Compose uncomposes everything under it (run 42267432732).
+        bottom = IME_TOP if s['ime'] else VIEW_BOTTOM
         vis = []
         for nd in n:
             nd.y -= off
-            if nd.y + nd.h > VIEW_TOP and nd.y < VIEW_BOTTOM:
+            if nd.y + nd.h > VIEW_TOP and nd.y < bottom:
                 vis.append(nd)
         n = vis
     if s['notif_dialog']:
@@ -430,6 +435,7 @@ def do_back(s):
         s['panel'] = False
     else:
         # ungated BACK finishes this single-activity app (pixel-proven run 42212127418)
+        s['back_exits'] = s.get('back_exits', 0) + 1
         s['running'] = False
         s['foreground'] = 'launcher'
 
@@ -437,6 +443,8 @@ def do_swipe(s, y1, y2):
     scr = s['screen']
     if scr not in SCROLLABLE or s['foreground'] != 'app':
         return
+    if s['ime'] and y1 >= IME_TOP:
+        return  # open keyboard eats swipes starting in its band (run 42267432732)
     dy = y1 - y2   # positive: up-swipe, content scrolls down (offset grows)
     if abs(dy) < 300:
         return  # long-press / in-place swipe
@@ -532,7 +540,9 @@ def main():
                 if code == '4' or code == 'KEYCODE_BACK':
                     do_back(s)
                 elif code in ('67', '112'):
-                    if s['focused']:
+                    if os.environ.get('ND_FAKE_IGNORE_CLEAR') == '1':
+                        pass  # field resists clearing (run 42267432732 CTRL+A+DEL)
+                    elif s['focused']:
                         if s['focused'].startswith('settings:'):
                             k = {'settings:name': 'userName', 'settings:url': 'backendUrl',
                                  'settings:assistant': 'assistantName'}[s['focused']]
