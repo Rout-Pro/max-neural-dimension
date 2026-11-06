@@ -100,6 +100,17 @@ def swipe_up_small():
     adb('shell', 'input', 'swipe', '540', '1800', '540', '1200', '250')
     time.sleep(0.8)
 
+def swipe_down():
+    adb('shell', 'input', 'swipe', '540', '900', '540', '2000', '300')
+    time.sleep(1)
+
+def tools_top():
+    # Sections inherit the previous section's scroll position (proven run
+    # 42248503219: notes/reminders sat ABOVE the habits viewport; ensure_visible
+    # only swipes down -> honest MISS/FAIL). Reset to the top before searching.
+    for _ in range(8):
+        swipe_down()
+
 def ensure_visible(text, max_swipes=14):
     """Small swipes until text appears in the dump; avoids jumping past targets."""
     for _ in range(max_swipes):
@@ -900,6 +911,7 @@ if want('upgrade') and RELEASE_GATE:
     # no run-as, no hook). Captured BEFORE any test reconfiguration. ===
     tap_nav('Tools', timeout=12)
     time.sleep(3)
+    tools_top()
     assert_true('upgrade(release): seeded task visible in UI after migration', 'seed-task-v1' in dump())
     shot('upgrade-release-task')
     tap_nav('Chat', timeout=12)
@@ -916,8 +928,13 @@ if want('upgrade') and RELEASE_GATE:
     shot('upgrade-release-chat')
     tap_nav('Settings', timeout=12)
     time.sleep(3)
-    name_seen = ensure_visible('SeedUserV1')
-    url_seen = ensure_visible('seed-settings-v1')
+    # Field-scoped, not raw substring: the seeded value must sit in the field
+    # BELOW its label - a value landed in the wrong field must not green this
+    # (fake-model bug proved the substring form can pass cross-field).
+    ensure_visible('Your name')
+    name_seen = 'SeedUserV1' in (field_text_below('Your name') or '')
+    ensure_visible('Backend URL')
+    url_seen = 'seed-settings-v1' in (field_text_below('Backend URL') or '')
     assert_true('upgrade(release): seeded profile name visible in Settings', name_seen)
     assert_true('upgrade(release): seeded backend URL visible in Settings', url_seen)
     shot('upgrade-release-settings')
@@ -969,6 +986,7 @@ if want('weather'):
     dismiss_keyboard()
     tap_nav('Tools', timeout=8)
     time.sleep(3)
+    tools_top()
     xml = dump()
     assert_true('weather: briefing card rendered', 'Daily briefing' in xml and 'Refresh briefing' in xml)
     if tap_text('Refresh briefing', timeout=6):
@@ -994,6 +1012,7 @@ if want('habits'):
     dismiss_keyboard()
     tap_nav('Tools', timeout=8)
     time.sleep(3)
+    tools_top()
     ensure_visible('Add a habit...')
     if tap_text('Add a habit...', timeout=8):
         time.sleep(1)
@@ -1029,6 +1048,7 @@ if want('remind'):
     dismiss_keyboard()
     tap_nav('Tools', timeout=8)
     time.sleep(3)
+    tools_top()
     ensure_visible('Add a note...')
     if tap_text('Add a note...', timeout=8):
         time.sleep(1)
@@ -1069,9 +1089,9 @@ if want('device'):
     dismiss_keyboard()
     tap_nav('Tools', timeout=8)
     time.sleep(3)
-    xml = dump()
-    assert_true('device: battery shown', 'Battery' in xml)
-    assert_true('device: storage shown', 'Storage free' in xml)
+    tools_top()
+    assert_true('device: battery shown', ensure_visible('Battery'))
+    assert_true('device: storage shown', ensure_visible('Storage free'))
     assert_true('device: flashlight card present', ensure_visible('Flashlight', max_swipes=6))
     for _ in range(3):
         swipe_up(); time.sleep(1.5)

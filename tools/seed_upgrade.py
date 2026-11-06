@@ -163,6 +163,14 @@ def visible(marker, scroll=False, tries=6):
             time.sleep(2)
     return marker in dump()
 
+def clear_field():
+    # Fields may be pre-filled (v2.0.1 default userName='Rout' - proven run
+    # 42248503219 pixel: seed typed into it and produced 'RoutSeedUserV1').
+    sh('adb', 'shell', 'input', 'keyevent', '--keycomb', '113', '29')  # CTRL+A
+    time.sleep(0.3)
+    sh('adb', 'shell', 'input', 'keyevent', '67')                      # DEL
+    time.sleep(0.3)
+
 def tap_field_below(label, timeout=15):
     # Settings Field composable: Text(label) above a BasicTextField. Search
     # label first WITHOUT scrolling (screen settled), small swipes only while
@@ -274,6 +282,7 @@ if not visible('SECURE BACKEND', scroll=True, tries=8):
 name_ok = False
 if tap_field_below('Your name'):
     time.sleep(1)
+    clear_field()
     type_text('SeedUserV1')
     time.sleep(1)
     dismiss_keyboard()
@@ -284,6 +293,7 @@ if not name_ok:
 url_ok = False
 if tap_field_below('Backend URL'):
     time.sleep(1)
+    clear_field()
     type_text('https://seed-settings-v1.invalid')
     time.sleep(1)
     dismiss_keyboard()

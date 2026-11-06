@@ -44,6 +44,11 @@ def run_scenario(name, sections, mutant=None, extra_env=None):
         assert block in orig, 'relaunch block not found for mutant'
         open(os.path.join(ND, 'tools', 'drive_ui.py'), 'w').write(
             orig.replace(block, '# MUTANT: relaunch + foreground gate removed'))
+    elif mutant == 'no-tools-top':
+        # pre-scroll-fix driver: sections inherit prior scroll position
+        mutant_src = orig.replace('\n    tools_top()', '')
+        assert mutant_src.count('tools_top()') == 1, 'def line only; call sites must all be stripped'
+        open(os.path.join(ND, 'tools', 'drive_ui.py'), 'w').write(mutant_src)
     elif mutant == 'stderr':
         open(os.path.join(ND, 'tools', 'drive_ui.py'), 'w').write(
             orig.replace("if not settle(120):",
@@ -131,6 +136,12 @@ def check(name, ok, detail):
     print(('PASS ' if ok else 'FAIL ') + name + ' -- ' + detail, flush=True)
 
 SKIP_T1 = '--skip-t1' in sys.argv
+ONLY = None
+for a in sys.argv:
+    if a.startswith('--only='):
+        ONLY = set(a.split('=', 1)[1].split(','))
+def want_run(tag):
+    return ONLY is None or tag in ONLY
 
 def load_prior(name):
     d = os.path.join(BASE, name)
@@ -148,59 +159,76 @@ check('T6 workflow script is a single line invoking the checked-in harness',
       slines == ['bash tools/run_ui_pass.sh'], repr(slines))
 
 # ---- T1 happy path ----
-if SKIP_T1:
+if want_run('T1') and SKIP_T1:
     r = load_prior('T1-happy')
     check('T1 rc=0', r['rc'] == 0, 'rc=%d (prior run, reused logs)' % r['rc'])
-else:
+elif want_run('T1'):
     r = run_scenario('T1-happy', SECTIONS)
     check('T1 rc=0', r['rc'] == 0, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
-check('T1 seed all true', 'SEED-RESULT: task=True msg=True name=True url=True' in r['out'],
+if want_run('T1'):
+  check('T1 seed all true', 'SEED-RESULT: task=True msg=True name=True url=True' in r['out'],
       lines_starting(r['out'], 'SEED-RESULT')[:1])
-fails = lines_starting(r['out'], 'FAIL ')
-check('T1 zero FAIL lines', not fails, fails[:5])
-missing = [t for t in T1_REQUIRED if t not in r['out']]
-check('T1 all %d required PASSes present' % len(T1_REQUIRED), not missing, missing[:5])
-check('T1 no assertion-gate trip', 'ASSERTION-GATE' not in r['out'], '')
-for sh_ in ['01-home-robot.png', 'upgrade-release-task.png', 'upgrade-release-chat.png',
-            'upgrade-release-settings.png', 'p6-weather-briefing.png', 'p6-reminders.png',
-            'p4-studio-editor.png', 'p5-tools-device.png']:
-    check('T1 shot %s exists' % sh_, os.path.exists(os.path.join(r['dir'], 'shots', sh_)), '')
-check('T1 honest-state print', 'chat honest state:' in r['out'],
-      [l for l in r['out'].splitlines() if 'honest state' in l])
+  fails = lines_starting(r['out'], 'FAIL ')
+  check('T1 zero FAIL lines', not fails, fails[:5])
+  missing = [t for t in T1_REQUIRED if t not in r['out']]
+  check('T1 all %d required PASSes present' % len(T1_REQUIRED), not missing, missing[:5])
+  check('T1 no assertion-gate trip', 'ASSERTION-GATE' not in r['out'], '')
+  for sh_ in ['01-home-robot.png', 'upgrade-release-task.png', 'upgrade-release-chat.png',
+              'upgrade-release-settings.png', 'p6-weather-briefing.png', 'p6-reminders.png',
+              'p4-studio-editor.png', 'p5-tools-device.png']:
+      check('T1 shot %s exists' % sh_, os.path.exists(os.path.join(r['dir'], 'shots', sh_)), '')
+  check('T1 honest-state print', 'chat honest state:' in r['out'],
+        [l for l in r['out'].splitlines() if 'honest state' in l])
+  _st = json.load(open(os.path.join(r['dir'], 'state', 'state.json')))
+  check('T7 seeded name EXACT (clear-before-type; default Rout must not merge)',
+        _st['settings']['userName'] == 'SeedUserV1', _st['settings']['userName'])
+
+# ---- T1n mutant: pre-scroll-fix driver must FAIL on scroll geometry ----
+if want_run('T1n'):
+  r = run_scenario('T1n-no-scroll-fix', SECTIONS, mutant='no-tools-top')
+  check('T1n rc!=0', r['rc'] != 0, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
+  check('T1n reproduces run 42248503219: notes above viewport unreachable',
+        'FAIL remind: note listed' in r['out'] and 'MISS tap: Add a note...' in r['out'], '')
+  check('T1n reproduces run 42248503219: flashlight above viewport unreachable',
+        'FAIL device: flashlight card present' in r['out'], '')
 
 # ---- T2 mutant: no relaunch gate ----
-r = run_scenario('T2-no-relaunch', SECTIONS, mutant='no-relaunch')
-check('T2 rc!=0', r['rc'] != 0, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
-check('T2 app-text NEURAL DIMENSION FAILs (launcher label cannot satisfy)',
-      'FAIL expect app-text: NEURAL DIMENSION' in r['out']
-      and 'PASS expect app-text: NEURAL DIMENSION' not in r['out'], '')
-check('T2 assertion gate fails job', 'ASSERTION-GATE' in r['out'],
-      [l for l in r['out'].splitlines() if 'ASSERTION-GATE' in l][:1])
+if want_run('T2'):
+  r = run_scenario('T2-no-relaunch', SECTIONS, mutant='no-relaunch')
+  check('T2 rc!=0', r['rc'] != 0, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
+  check('T2 app-text NEURAL DIMENSION FAILs (launcher label cannot satisfy)',
+        'FAIL expect app-text: NEURAL DIMENSION' in r['out']
+        and 'PASS expect app-text: NEURAL DIMENSION' not in r['out'], '')
+  check('T2 assertion gate fails job', 'ASSERTION-GATE' in r['out'],
+        [l for l in r['out'].splitlines() if 'ASSERTION-GATE' in l][:1])
 
 # ---- T3 mutant: project creation never happens ----
-r = run_scenario('T3-no-create', 'studio', extra_env={'ND_FAKE_NO_CREATE': '1'})
-check('T3 rc!=0', r['rc'] != 0, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
-check('T3 creation failure recorded', 'FAIL studio: project opened in editor' in r['out'], '')
-check('T3 project listed FAILs', 'FAIL studio: project listed' in r['out'], '')
-check('T3 zero-project deletion must NOT pass',
-      'FAIL studio: both projects deleted (after creation proven)' in r['out']
-      and 'PASS studio: both projects deleted' not in r['out'], '')
+if want_run('T3'):
+  r = run_scenario('T3-no-create', 'studio', extra_env={'ND_FAKE_NO_CREATE': '1'})
+  check('T3 rc!=0', r['rc'] != 0, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
+  check('T3 creation failure recorded', 'FAIL studio: project opened in editor' in r['out'], '')
+  check('T3 project listed FAILs', 'FAIL studio: project listed' in r['out'], '')
+  check('T3 zero-project deletion must NOT pass',
+        'FAIL studio: both projects deleted (after creation proven)' in r['out']
+        and 'PASS studio: both projects deleted' not in r['out'], '')
 
 # ---- T4 lost foreground after install -r: fail fast with pixel ----
-r = run_scenario('T4-launch-fail', SECTIONS, extra_env={'ND_FAKE_LAUNCH_FAIL_AFTER': '2'})
-check('T4 seed still passed', 'SEED-RESULT: task=True msg=True name=True url=True' in r['out'], '')
-check('T4 rc=1', r['rc'] == 1, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
-check('T4 ENV-BLOCKED message', 'ENV-BLOCKED at app-not-foreground-after-relaunch' in r['out'], '')
-check('T4 env-blocked pixel exists',
-      os.path.exists(os.path.join(r['dir'], 'shots', 'env-blocked-app-not-foreground-after-relaunch.png')), '')
-cascade = lines_starting(r['out'], 'FAIL ')
-check('T4 no assertion cascade', not cascade, cascade[:5])
-check('T4 fast (under 240s incl seed)', r['dur'] < 240, '%.0fs' % r['dur'])
+if want_run('T4'):
+  r = run_scenario('T4-launch-fail', SECTIONS, extra_env={'ND_FAKE_LAUNCH_FAIL_AFTER': '2'})
+  check('T4 seed still passed', 'SEED-RESULT: task=True msg=True name=True url=True' in r['out'], '')
+  check('T4 rc=1', r['rc'] == 1, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
+  check('T4 ENV-BLOCKED message', 'ENV-BLOCKED at app-not-foreground-after-relaunch' in r['out'], '')
+  check('T4 env-blocked pixel exists',
+        os.path.exists(os.path.join(r['dir'], 'shots', 'env-blocked-app-not-foreground-after-relaunch.png')), '')
+  cascade = lines_starting(r['out'], 'FAIL ')
+  check('T4 no assertion cascade', not cascade, cascade[:5])
+  check('T4 fast (under 240s incl seed)', r['dur'] < 240, '%.0fs' % r['dur'])
 
 # ---- T5 stderr / rc propagation through sh -c + run_ui_pass.sh ----
-r = run_scenario('T5-stderr', SECTIONS, mutant='stderr')
-check('T5 driver rc 3 propagates', r['rc'] == 3, 'rc=%d' % r['rc'])
-check('T5 stderr reaches transport', 'TRACE-SENTINEL' in r['err'], r['err'][:200])
+if want_run('T5'):
+  r = run_scenario('T5-stderr', SECTIONS, mutant='stderr')
+  check('T5 driver rc 3 propagates', r['rc'] == 3, 'rc=%d' % r['rc'])
+  check('T5 stderr reaches transport', 'TRACE-SENTINEL' in r['err'], r['err'][:200])
 
 ok = all(c['ok'] for c in results['checks'])
 print('ITEST-RESULT: %s (%d/%d checks passed)' % ('ALL-PASS' if ok else 'FAILURES',

@@ -3,9 +3,12 @@
 tools/run_ui_pass.sh + tools/seed_upgrade.py + tools/drive_ui.py (release flow).
 Models: install/install -r (kills app), launcher vs app foreground, uiautomator
 dumps with package-stamped nodes, IME, BACK semantics (dropdown>IME>exit),
-seeded v2.0.1 -> upgraded v2.1 data preservation, notifications, export files.
+seeded v2.0.1 -> upgraded v2.1 data preservation, notifications, export files,
+AND SCROLL GEOMETRY: Tools/Settings content is taller than the viewport,
+sections inherit scroll position (tap_nav does NOT reset it), ensure_visible's
+down-only swipes cannot reach targets above the viewport (run 42248503219).
 State in $ND_FAKE_STATE/state.json. Env mutants: ND_FAKE_NO_CREATE=1 (studio
-create no-op), ND_FAKE_LAUNCH_FAIL=1 (monkey never foregrounds the app).
+create no-op), ND_FAKE_LAUNCH_FAIL=1 / ND_FAKE_LAUNCH_FAIL_AFTER=k.
 NEVER used against a real device; exists to prove the harness itself.
 """
 import json, os, sys, base64, shutil
@@ -14,6 +17,7 @@ ST = os.environ.get('ND_FAKE_STATE', '/tmp/nd-fake-state')
 PKG = 'com.max.neuraldimension'
 LAUNCHER_PKG = 'com.google.android.apps.nexuslauncher'
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+VIEW_TOP, VIEW_BOTTOM = 140, 2050   # content viewport; nav bar sits at 2100
 
 def sp(*p):
     return os.path.join(ST, 'fs', *p)
@@ -30,11 +34,11 @@ def default_state():
         'screen': 'home', 'ime': False, 'focused': None,
         'dropdown': False, 'panel': False, 'template_dd': False, 'notif_dialog': False,
         'tasks': [], 'conversations': {}, 'current_conv': None,
-        'settings': {'userName': '', 'assistantName': 'MAX', 'backendUrl': '', 'appToken': ''},
+        'settings': {'userName': 'Rout', 'assistantName': 'MAX', 'backendUrl': '', 'appToken': ''},
         'habits': [], 'expenses': [], 'notes': [], 'reminders': [],
         'projects': [], 'editor': None, 'console_open': False, 'ran': False,
         'weather': False, 'briefing': False, 'notifications': [],
-        'export_notice': False, 'fields': {},
+        'export_notice': False, 'fields': {}, 'scroll': {}, 'launch_count': 0,
     }
 
 def save(s):
@@ -70,26 +74,22 @@ def field_node(s, key, placeholder, y, x=40, w=1000):
     val = s['fields'].get(key, '')
     return Node(text=val if val else placeholder, cls='android.widget.EditText', y=y, x=x, w=w)
 
-def screen_nodes(s):
+def stack(s, scr):
+    """Full content document for a screen: (nodes at document positions, doc bottom)."""
     n = []
-    y = 140
-    def add(text='', desc='', cls='android.widget.TextView', pkg=PKG, dy=80, **kw):
+    y = VIEW_TOP
+    def add(text='', desc='', cls='android.widget.TextView', pkg=PKG, dy=85, **kw):
         nonlocal y
         nd = Node(text=text, desc=desc, cls=cls, pkg=pkg, y=y, **kw)
         n.append(nd)
         y += dy
         return nd
-    if s['foreground'] == 'launcher':
-        return [Node(text='Neural Dimension', pkg=LAUNCHER_PKG, y=900, x=200, w=300),
-                Node(text='Gmail', pkg=LAUNCHER_PKG, y=900, x=560, w=200),
-                Node(text='Maps', pkg=LAUNCHER_PKG, y=1100, x=200, w=200)]
-    scr = s['screen']
     if scr == 'home':
         add('NEURAL DIMENSION', dy=120)
-        add('AI STATUS', dy=80)
-        add('TASKS', dy=80)
+        add('AI STATUS', dy=85)
+        add('TASKS', dy=85)
         for t in s['tasks']:
-            add(t)
+            add(t, dy=60)
         if s['panel']:
             add('Provider', dy=70); add('Secure backend status', dy=70); add('Close', dy=70)
     elif scr == 'chat':
@@ -117,91 +117,127 @@ def screen_nodes(s):
             n.append(Node(desc='Send', y=y - 90, x=1000, w=70, h=70))
     elif scr == 'voice':
         add('LIVE WITH', dy=100)
-        add('Recognition: on-device recognizer', dy=80)
+        add('Recognition: on-device recognizer', dy=85)
     elif scr == 'tools':
-        add('TOOLS', dy=100)
-        add('Tasks', dy=60)
-        n.append(field_node(s, 'task', 'Add a task...', y)); y += 70
-        add('Add', x=900, w=140, dy=60)
-        for t in s['tasks']:
-            add(t)
-        add('Daily briefing', dy=60)
-        add('Refresh briefing', dy=60)
+        # Real card order (ToolsScreen.kt): briefing, Tasks, Notes, Reminders,
+        # Habits, Expenses, Weather, Flashlight, Device, Open apps, Controls.
+        add('TOOLS', dy=120)
+        add('Daily briefing', dy=110)
+        add('Refresh briefing', dy=85)
         if s['briefing']:
-            add('%d open task%s' % (len(s['tasks']), 's' if len(s['tasks']) != 1 else ''), dy=60)
-        add('Weather', dy=60)
-        n.append(field_node(s, 'city', 'City name...', y)); y += 70
-        add('Check weather', dy=60)
-        if s['weather']:
-            add('Bhubaneswar: 28 C, humidity 65%, wind 3 m/s', dy=60)
-        add('Habits', dy=60)
-        n.append(field_node(s, 'habit', 'Add a habit...', y)); y += 70
-        add('Save habit', dy=60)
-        for h in s['habits']:
-            add('%s - streak %d' % (h['name'], h['streak']), dy=50)
-        if s['habits']:
-            add('Mark today', dy=50)
-        add('Expenses', dy=60)
-        n.append(field_node(s, 'expense', 'Expense label...', y)); y += 70
-        n.append(field_node(s, 'amount', 'Rs.', y)); y += 70
-        add('Save expense', dy=60)
-        for e in s['expenses']:
-            add('%s Rs. %.2f' % (e['label'], e['cents'] / 100.0), dy=50)
-        add('Total: Rs. %.2f' % (sum(e['cents'] for e in s['expenses']) / 100.0), dy=60)
-        add('Notes', dy=60)
-        n.append(field_node(s, 'note', 'Add a note...', y)); y += 70
-        add('Save note', dy=60)
+            add('%d open task%s' % (len(s['tasks']), 's' if len(s['tasks']) != 1 else ''), dy=70)
+        add('Tasks', dy=110)
+        n.append(field_node(s, 'task', 'Add a task...', y)); y += 85
+        add('Add', x=900, w=140, dy=70)
+        for t in s['tasks']:
+            add(t, dy=60)
+        add('Notes', dy=110)
+        n.append(field_node(s, 'note', 'Add a note...', y)); y += 85
+        add('Save note', dy=70)
         for t in s['notes']:
-            add(t, dy=50)
-        add('Reminders', dy=60)
-        n.append(field_node(s, 'remtitle', 'Reminder title...', y)); y += 70
-        n.append(field_node(s, 'remmin', 'min', y)); y += 70
-        add('Schedule', dy=60)
+            add(t, dy=60)
+        add('Reminders', dy=110)
+        n.append(field_node(s, 'remtitle', 'Reminder title...', y)); y += 85
+        n.append(field_node(s, 'remmin', 'min', y)); y += 85
+        add('Schedule', dy=70)
         for r in s['reminders']:
-            add('%s in %s min' % (r['title'], r['min']), dy=50)
+            add('%s in %s min' % (r['title'], r['min']), dy=60)
         if s['reminders']:
-            add('Cancel', dy=50)
-        add('Battery 87%', dy=50); add('Storage free 5.2 GB', dy=50); add('Flashlight', dy=50)
-        add('RAM free 2.1 GB', dy=50); add('Model: sdk_gphone64_x86_64', dy=50); add('Uptime 3h 12m', dy=50)
-        add('Open apps', dy=50); add('Settings', dy=50); add('Media volume', dy=50)
-        add('Notifications', dy=50); add('Camera', dy=50); add('Camera shortcut', dy=50)
+            add('Cancel', dy=60)
+        add('Habits', dy=110)
+        n.append(field_node(s, 'habit', 'Add a habit...', y)); y += 85
+        add('Save habit', dy=70)
+        for h in s['habits']:
+            add('%s - streak %d' % (h['name'], h['streak']), dy=60)
+        if s['habits']:
+            add('Mark today', dy=60)
+        add('Expenses', dy=110)
+        n.append(field_node(s, 'expense', 'Expense label...', y)); y += 85
+        n.append(field_node(s, 'amount', 'Rs.', y)); y += 85
+        add('Save expense', dy=70)
+        for e in s['expenses']:
+            add('%s Rs. %.2f' % (e['label'], e['cents'] / 100.0), dy=60)
+        add('Total: Rs. %.2f' % (sum(e['cents'] for e in s['expenses']) / 100.0), dy=70)
+        add('Weather', dy=110)
+        n.append(field_node(s, 'city', 'City name...', y)); y += 85
+        add('Check weather', dy=70)
+        if s['weather']:
+            add('Bhubaneswar, India: 24.6C, clear sky, humidity 96%, wind 1.2 km/h', dy=70)
+        add('Flashlight', dy=110)
+        add('Flashlight off', dy=70)
+        add('Device', dy=110)
+        add('Battery: 87%', dy=60); add('Storage free: 4.7 GB of 5.8 GB', dy=60)
+        add('RAM free: 1.2 GB of 2.4 GB', dy=60); add('Model: sdk_gphone64_x86_64 - Android 14 (API 34)', dy=60)
+        add('Uptime: 0h 4m', dy=60)
+        add('Open apps', dy=110)
+        add('Calendar Camera Chrome Clock', dy=60); add('Files Gmail Maps', dy=60)
+        add('Neural Dimension Phone Settings', dy=60); add('YouTube Drive Photos', dy=60)
+        add('Play Store Messages', dy=60); add('Recorder Calculator', dy=60)
+        add('Contacts Keep Tasks', dy=60); add('Docs Sheets Slides', dy=60)
+        add('Controls', dy=110)
+        add('Volume panel', dy=60); add('Media volume', dy=60)
+        add('Notifications', dy=60); add('Camera shortcut', dy=60)
+        add('Wi-Fi Bluetooth', dy=60); add('Brightness', dy=60)
+        add('Rotation lock', dy=60); add('Battery saver', dy=60)
+        add('Coming in later phases', dy=110)
+        add('Calendar integration, image and video generation.', dy=70)
+        add('Each arrives only when it genuinely works.', dy=70)
     elif scr == 'settings':
-        add('SETTINGS', dy=100)
-        add('Profile', dy=60)
-        add('Your name', dy=50)
-        n.append(Node(text=s['settings']['userName'], cls='android.widget.EditText', y=y)); y += 70
-        add('Assistant name', dy=50)
-        n.append(Node(text=s['settings']['assistantName'], cls='android.widget.EditText', y=y)); y += 70
-        add('SECURE BACKEND', dy=60)
-        add('Backend URL (HTTPS only)', dy=50)
-        n.append(Node(text=s['settings']['backendUrl'], cls='android.widget.EditText', y=y)); y += 70
-        add('Test connection', dy=60)
-        add('Speech rate', dy=50)
-        add('Voice', dy=50)
+        add('SETTINGS', dy=110)
+        add('Profile', dy=70)
+        add('Your name', dy=55)
+        n.append(Node(text=s['settings']['userName'], cls='android.widget.EditText', y=y)); y += 80
+        add('Assistant name', dy=55)
+        n.append(Node(text=s['settings']['assistantName'], cls='android.widget.EditText', y=y)); y += 80
+        add('SECURE BACKEND', dy=80)
+        add('Backend URL (HTTPS only)', dy=55)
+        n.append(Node(text=s['settings']['backendUrl'], cls='android.widget.EditText', y=y)); y += 80
+        add('Test connection', dy=70)
+        add('Speech rate', dy=60)
+        add('Voice', dy=60)
     elif scr == 'studio':
         if s['editor'] is not None:
             code = ("<html><body><h1>Hello from MAX Studio</h1>"
                     "<script>console.log('studio-ready')</script></body></html>")
             n.append(Node(text=code, cls='android.widget.EditText', y=y, h=400)); y += 420
-            add('Run', x=60, w=120, dy=0); add('Console (1)' if s['console_open'] else 'Console (0)', x=220, w=220, dy=60)
+            add('Run', x=60, w=120, dy=0); add('Console (1)' if s['console_open'] else 'Console (0)', x=220, w=220, dy=70)
             if s['console_open']:
-                add('studio-ready', dy=50)
-            add('Export project as single HTML file', dy=60)
-            add('Back to projects', dy=60)
+                add('studio-ready', dy=60)
+            add('Export project as single HTML file', dy=70)
+            add('Back to projects', dy=70)
         else:
             if not s['projects']:
-                add('No projects yet', dy=80)
-            add('Projects run in a sandboxed preview; React templates load React from a CDN.', dy=70)
-            n.append(field_node(s, 'projname', 'New project name', y)); y += 70
-            add('React (CDN)' if s.get('template') == 'react' else 'Blank page', dy=60)
+                add('No projects yet', dy=90)
+            add('Projects run in a sandboxed preview; React templates load React from a CDN.', dy=80)
+            n.append(field_node(s, 'projname', 'New project name', y)); y += 85
+            add('React (CDN)' if s.get('template') == 'react' else 'Blank page', dy=70)
             if s['template_dd']:
-                add('Blank page', dy=50); add('React (CDN)', dy=50)
-            add('Create project', dy=60)
+                add('Blank page', dy=60); add('React (CDN)', dy=60)
+            add('Create project', dy=70)
             for p in s['projects']:
-                add(p['name'], dy=50)
-                add('Delete project', dy=50)
+                add(p['name'], dy=60)
+                add('Delete project', dy=60)
         if s['export_notice']:
-            add('Exported to Downloads', dy=50)
+            add('Exported to Downloads', dy=60)
+    return n, y
+
+SCROLLABLE = ('tools', 'settings')
+
+def screen_nodes(s):
+    if s['foreground'] == 'launcher':
+        return [Node(text='Neural Dimension', pkg=LAUNCHER_PKG, y=900, x=200, w=300),
+                Node(text='Gmail', pkg=LAUNCHER_PKG, y=900, x=560, w=200),
+                Node(text='Maps', pkg=LAUNCHER_PKG, y=1100, x=200, w=200)]
+    scr = s['screen']
+    n, _bottom = stack(s, scr)
+    if scr in SCROLLABLE:
+        off = s.get('scroll', {}).get(scr, 0)
+        vis = []
+        for nd in n:
+            nd.y -= off
+            if nd.y + nd.h > VIEW_TOP and nd.y < VIEW_BOTTOM:
+                vis.append(nd)
+        n = vis
     if s['notif_dialog']:
         n.append(Node(text='Allow MAX to send notifications?', y=800, x=300, w=480))
         n.append(Node(text='Allow', y=880, x=560, w=180, h=60))
@@ -237,7 +273,7 @@ def do_tap(s, px, py):
         return
     t, d = nd.text, nd.desc
     s['export_notice'] = False
-    # dialogs first
+    scr = s['screen']
     if s['notif_dialog']:
         if t == 'Allow':
             s['notif_dialog'] = False
@@ -253,18 +289,12 @@ def do_tap(s, px, py):
     if s['dropdown']:
         if t == 'New conversation':
             s['current_conv'] = None
-            s['dropdown'] = False
         elif t in s['conversations']:
             s['current_conv'] = t
-            s['dropdown'] = False
-        else:
-            s['dropdown'] = False
+        s['dropdown'] = False
         return
     if s['template_dd']:
-        if t == 'React (CDN)':
-            s['template'] = 'react'
-        else:
-            s['template'] = 'blank'
+        s['template'] = 'react' if t == 'React (CDN)' else 'blank'
         s['template_dd'] = False
         return
     if t in ('Home', 'Chat', 'Voice', 'Tools', 'Settings', 'Studio') and nd.y >= NAV_Y:
@@ -282,13 +312,23 @@ def do_tap(s, px, py):
                 key = k
                 break
         if key is None and s['screen'] == 'settings':
-            key = 'settings:' + ('name' if nd.y < 400 else 'url' if nd.y > 500 else 'assistant')
+            # field doc coords: name 375, assistant 510, url 725
+            docy = nd.y + s.get('scroll', {}).get('settings', 0)
+            key = 'settings:name' if docy < 450 else 'settings:assistant' if docy < 650 else 'settings:url'
         if key is None and s['screen'] == 'studio' and s['editor'] is not None:
             key = 'editor'
         s['focused'] = key
         s['ime'] = True
+        # adjustResize: opening the IME pans the content so the focused field
+        # sits well above the keyboard (~y900); offset never moves back down.
+        if scr in SCROLLABLE:
+            sc = s.setdefault('scroll', {})
+            _n, bottom = stack(s, scr)
+            max_off = max(0, bottom - (VIEW_BOTTOM - VIEW_TOP))
+            docy = nd.y + sc.get(scr, 0)
+            target = max(0, min(docy - 900, max_off))
+            sc[scr] = max(sc.get(scr, 0), target)
         return
-    scr = s['screen']
     if scr == 'home':
         if t == 'AI STATUS':
             s['panel'] = True
@@ -393,6 +433,18 @@ def do_back(s):
         s['running'] = False
         s['foreground'] = 'launcher'
 
+def do_swipe(s, y1, y2):
+    scr = s['screen']
+    if scr not in SCROLLABLE or s['foreground'] != 'app':
+        return
+    dy = y1 - y2   # positive: up-swipe, content scrolls down (offset grows)
+    if abs(dy) < 300:
+        return  # long-press / in-place swipe
+    _n, bottom = stack(s, scr)
+    max_off = max(0, bottom - (VIEW_BOTTOM - VIEW_TOP))
+    sc = s.setdefault('scroll', {})
+    sc[scr] = min(max(sc.get(scr, 0) + dy, 0), max_off)
+
 def launch(s):
     if os.environ.get('ND_FAKE_LAUNCH_FAIL') == '1':
         return
@@ -439,10 +491,8 @@ def main():
     if cmd == 'pull':
         src, dst = args[1], args[2]
         rel = src.lstrip('/').replace('storage/emulated/0/', '', 1)
-        if rel.startswith('sdcard'):
-            rel = rel
-        else:
-            rel = 'sdcard/' + rel if not rel.startswith('sdcard') else rel
+        if not rel.startswith('sdcard'):
+            rel = 'sdcard/' + rel
         f = sp(rel)
         if os.path.exists(f):
             shutil.copyfile(f, dst)
@@ -490,7 +540,7 @@ def main():
                         else:
                             s['fields'][s['focused']] = ''
             elif a[1] == 'swipe':
-                pass
+                do_swipe(s, int(a[3]), int(a[5]))
             save(s)
             return 0
         if a[0] == 'monkey':
