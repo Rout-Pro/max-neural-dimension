@@ -307,6 +307,15 @@ def _assertion_gate():
 if not settle(120):   # let a fresh emulator finish boot jank before any driving
     env_blocked('start')
 
+# install -r (run_ui_pass.sh) kills the app process; it must be running before
+# any driving. Previously only the BACKEND_TEST block launched it - without a
+# backend the driver drove the LAUNCHER all run (run 42233330418: 30 FAILs on
+# a dead app; 'NEURAL DIMENSION' vacuously matched the launcher icon label).
+relaunch()
+_r = adb('shell', 'dumpsys', 'window', 'displays')
+if PKG not in (_r.stdout or ''):
+    env_blocked('app-not-foreground-after-relaunch')
+
 OLD_APK = os.environ.get('ND_OLD_APK', '/tmp/old.apk')
 NEW_APK = os.environ.get('ND_NEW_APK', 'app/build/outputs/apk/debug/NeuralDimension-2.0.apk')
 
