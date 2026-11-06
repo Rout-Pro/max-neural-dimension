@@ -53,14 +53,8 @@ def main():
     sys.stdout.flush()
     if version_only:
         return
-    signers = sorted(glob.glob(os.path.join(os.environ.get('ANDROID_HOME', '/nonexistent'),
-                                            'build-tools', '*', 'apksigner')))
-    which = shutil.which('apksigner')
-    if which:
-        signers.append(which)
-    apksigner = signers[-1] if signers else None
-    if not (apk and os.path.exists(apk) and apksigner):
-        print('CANDIDATE-GATE cert check skipped: artifact/apksigner unavailable here (version gate still enforced)')
+    if not (apk and os.path.exists(apk)):
+        print('CANDIDATE-GATE cert/bytes skipped: no artifact in this environment (version gate still enforced)')
         sys.stdout.flush()
         return
     r = adb('shell', 'pm', 'path', PKG)
@@ -72,6 +66,28 @@ def main():
     r = adb('pull', m.group(1), pulled)
     if r.returncode != 0 or not os.path.exists(pulled):
         gate_fail('could not pull installed base.apk: ' + ((r.stderr or '').strip()[:120]))
+    # Byte identity: successive unreleased candidates share versionCode 4,
+    # versionName 2.0 and the same signing cert - only the bytes distinguish
+    # them. The installed base.apk must BE the artifact just installed
+    # (run_ui_pass.sh installs with --no-incremental so this is a plain file).
+    import hashlib
+    h_inst = hashlib.sha256(open(pulled, 'rb').read()).hexdigest()
+    h_art = hashlib.sha256(open(apk, 'rb').read()).hexdigest()
+    if h_inst != h_art:
+        gate_fail('installed bytes sha256 %s... != artifact %s... - stale or foreign binary under test'
+                  % (h_inst[:16], h_art[:16]))
+    print('CANDIDATE-GATE bytes ok: installed base.apk sha256 matches artifact (%s...)' % h_inst[:16])
+    sys.stdout.flush()
+    signers = sorted(glob.glob(os.path.join(os.environ.get('ANDROID_HOME', '/nonexistent'),
+                                            'build-tools', '*', 'apksigner')))
+    which = shutil.which('apksigner')
+    if which:
+        signers.append(which)
+    apksigner = signers[-1] if signers else None
+    if not apksigner:
+        print('CANDIDATE-GATE cert check skipped: apksigner unavailable here (version+bytes gates enforced)')
+        sys.stdout.flush()
+        return
     def cert_sha256(path):
         out = subprocess.run([apksigner, 'verify', '--print-certs', path],
                              capture_output=True, text=True).stdout
@@ -80,7 +96,7 @@ def main():
     c_inst, c_art = cert_sha256(pulled), cert_sha256(apk)
     if not c_inst or not c_art or c_inst != c_art:
         gate_fail('signing cert mismatch: installed=%s artifact=%s' % (c_inst, c_art))
-    print('CANDIDATE-GATE PASS: installed package is the expected candidate (version %s/%s, cert sha256 %s...)'
+    print('CANDIDATE-GATE PASS: installed package is the expected candidate (version %s/%s, bytes identical, cert sha256 %s...)'
           % (code, name, c_inst[:16]))
     sys.stdout.flush()
 

@@ -478,6 +478,10 @@ def main():
     if cmd == 'install':
         path = args[-1]
         ninst = s.get('installs', 0) + 1
+        if os.path.exists(path):
+            os.makedirs(sp('.'), exist_ok=True)
+            shutil.copyfile(path, sp('installed-base.apk'))
+            s['installed_copy'] = sp('installed-base.apk')
         if '-r' in args:
             # in-place upgrade: data preserved, process killed
             s['version'] = '2.0.1' if ('old' in path or '2.0.1' in path) else '2.1'
@@ -503,6 +507,19 @@ def main():
             return 0  # debug-only paths; not exercised in release flow
     if cmd == 'pull':
         src, dst = args[1], args[2]
+        if src.endswith('base.apk'):
+            # The installed binary's own bytes; ND_FAKE_PULL_BYTES simulates a
+            # stale/foreign binary with the same version and cert.
+            data = os.environ.get('ND_FAKE_PULL_BYTES')
+            if data is not None:
+                open(dst, 'w').write(data)
+                return 0
+            f = s.get('installed_copy')
+            if f and os.path.exists(f):
+                shutil.copyfile(f, dst)
+                return 0
+            print('adb: error: remote object does not exist', file=sys.stderr)
+            return 1
         rel = src.lstrip('/').replace('storage/emulated/0/', '', 1)
         if not rel.startswith('sdcard'):
             rel = 'sdcard/' + rel

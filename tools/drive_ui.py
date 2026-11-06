@@ -370,7 +370,7 @@ if want('migration') and RELEASE_GATE:
     print('migration section skipped in release gate (upgrade(release) owns preservation evidence)')
     sys.stdout.flush()
 elif want('migration'):
-    # ---------- Room 1->2 migration evidence: seed with the RELEASED app, upgrade in place ----------
+    # ---------- Room 1->4 chain migration evidence: seed with the RELEASED v2.0.1 (schema 1), upgrade in place ----------
     if os.path.exists(OLD_APK):
         print('MIGRATION: installing previous release APK'); sys.stdout.flush()
         adb('shell', 'pm', 'uninstall', PKG)

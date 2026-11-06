@@ -18,7 +18,7 @@ if [ "${BUILD_TYPE:-debug}" = "release" ]; then
 else
   APK=app/build/outputs/apk/debug/NeuralDimension-2.0.apk
 fi
-adb install -r "$APK"
+adb install -r --no-incremental "$APK"  # plain install: byte-identity gate needs a real on-device file
 
 # Wrong binary under test poisons every later assertion (run 42285108996:
 # v2.0.1 left installed, 26-section cascade). Fail fast before driving.

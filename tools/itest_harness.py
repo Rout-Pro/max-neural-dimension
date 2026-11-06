@@ -21,6 +21,9 @@ Scenarios:
                     seed must FAIL honestly, never type into a non-empty field
   T12 wrong-version - fake reports versionCode 3 under the candidate gate; the
                     run must fail at the gate BEFORE any feature section runs
+  T13 wrong-bytes   - same version + same cert but stale bytes (successive
+                    unreleased candidates are indistinguishable without the
+                    byte gate); must FAIL at the gate
 """
 import os, subprocess, sys, shutil, time, json
 
@@ -82,6 +85,12 @@ def run_scenario(name, sections, mutant=None, extra_env=None):
         open(os.path.join(ND, 'tools', 'drive_ui.py'), 'w').write(
             orig.replace("if not settle(120):",
                          "import sys as _s; _s.stderr.write('TRACE-SENTINEL\\n'); _s.exit(3)\nif not settle(120):", 1))
+    # Local stand-in for the built release artifact: the byte gate compares
+    # the installed bytes against THIS file (fake records what it installed).
+    apk_dir = os.path.join(ND, 'app', 'build', 'outputs', 'apk', 'release')
+    os.makedirs(apk_dir, exist_ok=True)
+    with open(os.path.join(apk_dir, 'NeuralDimension-release.apk'), 'w') as f:
+        f.write('ND-FAKE-CANDIDATE-ARTIFACT-BYTES\n')
     env = dict(os.environ)
     env['PATH'] = BIN + ':' + env['PATH']
     env['ND_FAKE_STATE'] = os.path.join(d, 'state')
@@ -217,6 +226,9 @@ if want_run('T1'):
   check('T1 candidate gate passed and was enforced',
         'CANDIDATE-GATE version ok: versionCode=4 versionName=2.0' in r['out'],
         [l for l in r['out'].splitlines() if 'CANDIDATE-GATE' in l])
+  check('T1 byte-identity gate passed (installed bytes == artifact)',
+        'CANDIDATE-GATE bytes ok' in r['out'],
+        [l for l in r['out'].splitlines() if 'CANDIDATE-GATE' in l])
   check('T1 mutation budget: exactly 2 installs (old + upgrade), 0 uninstalls',
         _st.get('installs') == 2 and _st.get('uninstalls', 0) == 0,
         'installs=%s uninstalls=%s force_stops=%s' % (_st.get('installs'), _st.get('uninstalls'), _st.get('force_stops')))
@@ -339,6 +351,19 @@ if want_run('T12'):
         and 'expect app-text' not in r['out'] and 'habits:' not in r['out'], '')
   fails = lines_starting(r['out'], 'FAIL ')
   check('T12 no assertion cascade after gate', not fails, fails[:5])
+
+# ---- T13: same version + same cert but WRONG BYTES must fail at the gate ----
+if want_run('T13'):
+  r = run_scenario('T13-wrong-bytes', SECTIONS, extra_env={'ND_FAKE_PULL_BYTES': 'STALE-CANDIDATE-BYTES'})
+  check('T13 rc=1', r['rc'] == 1, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
+  check('T13 byte gate FAILs on stale bytes with version intact',
+        'CANDIDATE-GATE FAIL: installed bytes sha256' in r['out']
+        and 'CANDIDATE-GATE version ok' in r['out'],
+        [l for l in r['out'].splitlines() if 'CANDIDATE-GATE' in l])
+  check('T13 gate pixel exists',
+        os.path.exists(os.path.join(r['dir'], 'shots', 'candidate-gate-fail.png')), '')
+  check('T13 no feature section ever ran',
+        'expect app-text' not in r['out'] and 'habits:' not in r['out'], '')
 
 ok = all(c['ok'] for c in results['checks'])
 print('ITEST-RESULT: %s (%d/%d checks passed)' % ('ALL-PASS' if ok else 'FAILURES',
