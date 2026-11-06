@@ -10,10 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import android.util.Log
-import androidx.compose.foundation.interaction.DragInteraction
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -63,7 +59,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -148,35 +143,8 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
     }
     val scrollCount = if (incognito) incognitoMessages.size else messages.size
     val scrollTail = (if (incognito) incognitoMessages else messages).lastOrNull()?.text?.length
-    // Stick-to-bottom (item 0 = newest, reverseLayout). scrollToItem is atomic:
-    // animateScrollToItem could be cancelled mid-flight by retriggers or by the IME
-    // closing, leaving the list stranded above the bottom (old bubbles clipping at
-    // the header with a gap above the input). Position alone cannot distinguish
-    // that stranded state from a user reading history, so track actual drag
-    // gestures: re-pin on content or IME changes unless the user has dragged up
-    // and not returned. A message the user just sent always re-pins.
-    var userPulledUp by remember { mutableStateOf(false) }
-    LaunchedEffect(listState) {
-        listState.interactionSource.interactions.collect { interaction ->
-            if (interaction is DragInteraction.Stop || interaction is DragInteraction.Cancel) {
-                userPulledUp = !(listState.firstVisibleItemIndex == 0 &&
-                    listState.firstVisibleItemScrollOffset < 48)
-            }
-        }
-    }
-    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
-    LaunchedEffect(scrollCount, scrollTail, incognito, imeBottom) {
-        if (scrollCount == 0) return@LaunchedEffect
-        val lastIsUser =
-            (if (incognito) incognitoMessages else messages).lastOrNull()?.role == "user"
-        // TEMP diagnostic for the stranded-scroll investigation
-        Log.d("NDCLIP", "fire count=$scrollCount pulledUp=$userPulledUp lastUser=$lastIsUser " +
-            "pre idx=${listState.firstVisibleItemIndex} off=${listState.firstVisibleItemScrollOffset} ime=$imeBottom")
-        if (!userPulledUp || lastIsUser) {
-            listState.scrollToItem(0)
-            userPulledUp = false
-            Log.d("NDCLIP", "pinned post idx=${listState.firstVisibleItemIndex} off=${listState.firstVisibleItemScrollOffset}")
-        }
+    LaunchedEffect(scrollCount, scrollTail, incognito) {
+        if (scrollCount > 0) listState.animateScrollToItem(0)
     }
 
     Column(Modifier.fillMaxSize().background(NdBlack).statusBarsPadding().imePadding()) {
