@@ -913,7 +913,9 @@ if want('studio'):
             time.sleep(1)
             type_text('ReactExp')
             time.sleep(1)
-            tap_text('React (CDN)', timeout=4)
+            tap_text('Blank page', timeout=4)   # open template dropdown
+            time.sleep(1)
+            tap_text('React (CDN)', timeout=4)  # pick React item in dropdown
             time.sleep(1)
             tap_text('Create project', timeout=5)
             time.sleep(3)
@@ -930,8 +932,6 @@ if want('studio'):
                 assert_true('studio: react export readable', False)
         tap_text('Back to projects', timeout=6)
         time.sleep(2)
-        if tap_text('Delete project', timeout=4):
-            time.sleep(2)
     # back, list, delete
     tap_text('Back to projects', timeout=6)
     time.sleep(2)
