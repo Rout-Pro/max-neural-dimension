@@ -7,6 +7,7 @@ import android.provider.MediaStore
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebView
+import android.webkit.WebResourceRequest
 import android.webkit.WebViewClient
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -100,7 +101,7 @@ fun StudioScreen() {
         Column(Modifier.fillMaxSize().background(NdBlack).statusBarsPadding().padding(18.dp)) {
             Text("WEB STUDIO", color = NdLavender, fontSize = 13.sp, letterSpacing = 3.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(4.dp))
-            Text("Local web projects - HTML, CSS, JavaScript. Nothing leaves the device.",
+            Text("Projects run locally in a sandboxed preview. Blank and Starter are self-contained; the React template loads React + Babel from a CDN, so its preview needs network.",
                 color = NdMuted, fontSize = 11.sp)
             if (notice.isNotBlank()) {
                 Spacer(Modifier.height(4.dp)); Text(notice, color = NdNeon, fontSize = 12.sp)
@@ -122,7 +123,7 @@ fun StudioScreen() {
                     TextButton(onClick = { templateMenu = true }) { Text(chosenTemplate.label, color = NdLavender, fontSize = 12.sp) }
                     DropdownMenu(expanded = templateMenu, onDismissRequest = { templateMenu = false }) {
                         StudioStore.Template.entries.forEach { t ->
-                            DropdownMenuItem(text = { Text(t.label) }, onClick = { chosenTemplate = t; templateMenu = false })
+                            DropdownMenuItem(text = { Text(t.label + if (t == StudioStore.Template.REACT) " - needs network (CDN)" else " - offline") }, onClick = { chosenTemplate = t; templateMenu = false })
                         }
                     }
                 }
@@ -261,9 +262,26 @@ private fun StudioEditor(store: StudioStore, project: StudioProject, onClose: ()
                     AndroidView(
                         factory = { ctx ->
                             WebView(ctx).apply {
+                                // Trust boundary: project code (user-created or imported) is untrusted.
+                                // - No addJavascriptInterface: scripts get no bridge to app code, tokens, chats or files.
+                                // - No file:// or content:// access: scripts cannot read device or app-private data.
+                                // - Top-level navigation away from the preview document is blocked (CDN
+                                //   subresources like React still load over network; they are not bundled).
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
-                                webViewClient = WebViewClient()
+                                settings.allowFileAccess = false
+                                settings.allowContentAccess = false
+                                webViewClient = object : WebViewClient() {
+                                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                        val url = request?.url?.toString() ?: return false
+                                        return if (url.startsWith("https://studio.local/") || url.startsWith("about:") || url.startsWith("data:")) {
+                                            false
+                                        } else {
+                                            consoleLines.add("[blocked] external navigation: $url")
+                                            true
+                                        }
+                                    }
+                                }
                                 webChromeClient = object : WebChromeClient() {
                                     override fun onConsoleMessage(message: ConsoleMessage?): Boolean {
                                         message?.let {

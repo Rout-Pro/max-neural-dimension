@@ -844,7 +844,10 @@ if want('studio'):
     dismiss_keyboard()
     tap_nav('Studio', timeout=8)
     time.sleep(3)
-    assert_true('studio: empty state', 'No projects yet' in dump())
+    xml = dump()
+    assert_true('studio: empty state', 'No projects yet' in xml)
+    assert_true('studio: honest labeling (sandbox + CDN note, no offline claim)',
+                'sandboxed preview' in xml and 'Nothing leaves the device' not in xml and 'CDN' in xml)
     if tap_text('New project name', timeout=8):
         time.sleep(1)
         type_text('StudioTest')
