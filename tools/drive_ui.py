@@ -839,17 +839,41 @@ if BACKEND_TEST:
     sys.stdout.flush()
 
 if want('upgrade'):
-    # === Release gate: data seeded into delivered v2.0.1 must survive the in-place upgrade ===
-    # (workflow installed v2.0.1, seeded 'seed-task-v1', then adb install -r the new build)
+    # === Release gate: data seeded into delivered v2.0.1 must survive in-place upgrade ===
+    # Exact field-level proof: pull the migrated Room DB + DataStore via run-as
+    # (debug build is debuggable; release install-r path exercised by the workflow).
+    subprocess.run(['adb', 'exec-out', 'run-as', 'com.max.neuraldimension',
+                    'cat', 'databases/max.db'], stdout=open('/tmp/upgraded.db', 'wb'))
+    try:
+        import sqlite3
+        con = sqlite3.connect('/tmp/upgraded.db')
+        tasks = [r[0] for r in con.execute('SELECT title FROM tasks')]
+        convs = [r[0] for r in con.execute('SELECT title FROM conversations')]
+        msgs = [r[0] for r in con.execute("SELECT text FROM messages WHERE role='user'")]
+        tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+        con.close()
+        print('UPGRADE-DB: tables=', tables)
+        assert_true('upgrade: seeded task row preserved', 'seed-task-v1' in tasks)
+        assert_true('upgrade: seeded conversation row preserved', any('seed-message-v1' in c for c in convs))
+        assert_true('upgrade: seeded user message row preserved', any('seed-message-v1' in m for m in msgs))
+        assert_true('upgrade: v4 tables created (notes/reminders/habits/expenses)',
+                    all(t in tables for t in ['notes', 'reminders', 'habits', 'expenses']))
+    except Exception as e:
+        print('UPGRADE-DB-ERROR:', e)
+        assert_true('upgrade: migrated DB readable via run-as', False)
+    # DataStore settings preservation
+    r = subprocess.run(['adb', 'exec-out', 'run-as', 'com.max.neuraldimension',
+                        'cat', 'files/datastore/max_settings.preferences_pb'],
+                       capture_output=True)
+    pb = r.stdout
+    assert_true('upgrade: seeded backend URL preserved in DataStore', b'seed-settings-v1' in pb)
+    assert_true('upgrade: seeded profile name preserved in DataStore', b'SeedUserV1' in pb)
+    # UI-level confirmation too
     tap_nav('Tools', timeout=12)
     time.sleep(3)
     xml = dump()
-    for _ in range(3):
-        if 'seed-task-v1' in xml:
-            break
-        swipe_up(); time.sleep(1.5)
-        xml = dump()
-    assert_true('upgrade: task seeded in v2.0.1 survived Room migration v1->current', 'seed-task-v1' in xml)
+    assert_true('upgrade: seeded task visible in UI after migration', 'seed-task-v1' in xml)
+
 
 if want('weather'):
     # === Phase 6c: Weather (real Open-Meteo network) + Daily briefing (local) ===
