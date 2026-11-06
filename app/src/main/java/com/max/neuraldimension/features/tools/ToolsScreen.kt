@@ -95,6 +95,14 @@ fun ToolsScreen(vm: AppViewModel) {
     ) {
         Text("TOOLS", color = NdLavender, fontSize = 13.sp, letterSpacing = 3.sp, fontWeight = FontWeight.SemiBold)
 
+        // Daily briefing (local aggregation of tasks/reminders/habits + weather if loaded)
+        ToolCard("Daily briefing") {
+            var briefingText by remember { mutableStateOf<String?>(null) }
+            briefingText?.let { Text(it, color = NdSilver, fontSize = 13.sp) }
+                ?: Text("Tap refresh for a summary of your day.", color = NdMuted, fontSize = 12.sp)
+            TextButton(onClick = { briefingText = vm.briefing() }) { Text("Refresh briefing", color = NdLavender, fontSize = 12.sp) }
+        }
+
         // Tasks (backed by Room; shown on the home hologram panel)
         ToolCard("Tasks") {
             tasks.filter { !it.done }.take(5).forEach { t ->
@@ -274,6 +282,31 @@ fun ToolsScreen(vm: AppViewModel) {
             }
         }
 
+        // Weather (real network via Open-Meteo; free, keyless, city name only)
+        ToolCard("Weather") {
+            var city by remember { mutableStateOf("") }
+            val wx by vm.weather.collectAsState()
+            val busy by vm.weatherBusy.collectAsState()
+            wx?.let { Text(it, color = NdSilver, fontSize = 13.sp) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = city, onValueChange = { city = it },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = NdSilver, fontSize = 13.sp),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(NdLavender),
+                    modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+                    decorationBox = { inner ->
+                        if (city.isEmpty()) Text("City (e.g. Bhubaneswar)...", color = NdMuted, fontSize = 13.sp)
+                        inner()
+                    }
+                )
+                TextButton(onClick = { vm.loadWeather(city) }) {
+                    Text(if (busy) "Loading..." else "Check weather", color = NdLavender, fontSize = 12.sp)
+                }
+            }
+            Text("Source: Open-Meteo over HTTPS - free, no key; only the city name is sent. Needs network.",
+                color = NdMuted, fontSize = 10.sp)
+        }
+
         // Flashlight (real torch via CameraManager)
         ToolCard("Flashlight") {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -374,7 +407,7 @@ fun ToolsScreen(vm: AppViewModel) {
 
         ToolCard("Coming in later phases") {
             Text(
-                "Calendar and weather, daily briefing, image and video generation. Each arrives only when it genuinely works.",
+                "Calendar integration, image and video generation, and larger AI features. Each arrives only when it genuinely works.",
                 color = NdMuted, fontSize = 12.sp
             )
         }

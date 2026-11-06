@@ -337,6 +337,38 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { db.expenseDao().delete(e) }
     }
 
+    val weather = MutableStateFlow<String?>(null)   // null = not loaded this session
+    val weatherBusy = MutableStateFlow(false)
+
+    fun loadWeather(city: String) {
+        if (city.isBlank() || weatherBusy.value) return
+        viewModelScope.launch {
+            weatherBusy.value = true
+            weather.value = try {
+                com.max.neuraldimension.domain.WeatherClient.current(city)
+            } catch (e: Exception) {
+                "Weather unavailable: " + (e.message ?: e.javaClass.simpleName)
+            }
+            weatherBusy.value = false
+        }
+    }
+
+    /** Local daily briefing: aggregates Room data; weather only if loaded this session. */
+    fun briefing(): String {
+        val openTasks = tasks.value.count { !it.done }
+        val now = System.currentTimeMillis()
+        val next = reminders.value.filter { !it.fired && it.triggerAt > now }.minByOrNull { it.triggerAt }
+        val today = now / 86_400_000L
+        val habitsDone = habits.value.count { it.lastDoneDay == today }
+        val totalHabits = habits.value.size
+        val parts = mutableListOf<String>()
+        parts.add("$openTasks open task" + (if (openTasks == 1) "" else "s"))
+        if (next != null) parts.add("next reminder: " + next.title + " in " + ((next.triggerAt - now) / 60000).coerceAtLeast(0) + "m")
+        if (totalHabits > 0) parts.add("habits $habitsDone/$totalHabits done today")
+        weather.value?.let { if (!it.startsWith("Weather unavailable")) parts.add(it) }
+        return parts.joinToString(" - ")
+    }
+
     fun addTask(title: String) {
         if (title.isBlank()) return
         viewModelScope.launch { db.taskDao().insert(TaskItem(title = title.trim())) }

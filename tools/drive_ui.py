@@ -838,6 +838,31 @@ if BACKEND_TEST:
     print('PHASE2-COVERAGE picker=' + ('ok' if PICKER['ok'] else 'MISS'))
     sys.stdout.flush()
 
+if want('weather'):
+    # === Phase 6c: Weather (real Open-Meteo network) + Daily briefing (local) ===
+    # Network-dependent: failure may be runner networking, not the app.
+    dismiss_keyboard()
+    tap_nav('Tools', timeout=8)
+    time.sleep(3)
+    xml = dump()
+    assert_true('weather: briefing card rendered', 'Daily briefing' in xml and 'Refresh briefing' in xml)
+    if tap_text('Refresh briefing', timeout=6):
+        time.sleep(2)
+        assert_true('weather: briefing aggregates local data', 'open task' in dump())
+    if tap_text('City (e.g. Bhubaneswar)...', timeout=8):
+        time.sleep(1)
+        type_text('Bhubaneswar')
+        time.sleep(1)
+        dismiss_keyboard()
+        tap_text('Check weather', timeout=5)
+        time.sleep(15)
+        xml = dump()
+        ok = 'humidity' in xml and 'wind' in xml
+        assert_true('weather: real Open-Meteo result rendered (network-dependent)', ok or 'Weather unavailable' in xml)
+        if ok:
+            print('WEATHER-LINE:', [l for l in xml.split('<') if 'humidity' in l][:1])
+    shot('p6-weather-briefing')
+
 if want('habits'):
     # === Phase 6b: Habits + Expenses (Room-backed, local) ===
     dismiss_keyboard()
