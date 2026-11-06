@@ -71,12 +71,12 @@ class StudioStore(context: Context) {
         // Inline local css/js - the preview loads from a data document, so file
         // references would not resolve. Element attributes (e.g. text/babel) survive.
         if (css.isNotBlank()) {
-            val linkRe = Regex("<link[^>]*href=[\"']style\.css[\"'][^>]*>", RegexOption.IGNORE_CASE)
+            val linkRe = Regex("<link[^>]*href=[\"']style\\.css[\"'][^>]*>", RegexOption.IGNORE_CASE)
             doc = if (linkRe.containsMatchIn(doc)) linkRe.replace(doc, "<style>\n$css\n</style>")
                   else doc.replace("</head>", "<style>\n$css\n</style>\n</head>", ignoreCase = true)
         }
         if (js.isNotBlank()) {
-            val scriptRe = Regex("<script([^>]*)\ssrc=[\"']script\.js[\"']([^>]*)>\s*</script>", RegexOption.IGNORE_CASE)
+            val scriptRe = Regex("<script([^>]*)\\ssrc=[\"']script\\.js[\"']([^>]*)>\\s*</script>", RegexOption.IGNORE_CASE)
             doc = if (scriptRe.containsMatchIn(doc)) scriptRe.replace(doc, "<script$1$2>\n$js\n</script>")
                   else if (doc.contains("</body>", ignoreCase = true))
                       doc.replace("</body>", "<script>\n$js\n</script>\n</body>", ignoreCase = true)
