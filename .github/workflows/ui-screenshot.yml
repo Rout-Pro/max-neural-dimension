@@ -78,8 +78,6 @@ jobs:
           "$APKSIGNER" verify --print-certs /tmp/delivered-2.0.1.apk | grep -i 'SHA-256' | sed 's/.*: //' | tr -d ' ' | tr 'A-F' 'a-f' | sort > /tmp/cert-old.txt
           if ! diff /tmp/cert-new.txt /tmp/cert-old.txt; then echo "::error::signing certificate differs from delivered v2.0.1"; exit 1; fi
           echo "PASS release artifact: hook-free, HTTPS-only, debuggable=false, versionCode=$VC>3, same-signing as v2.0.1"
-      - name: Download previous release APK (migration source)
-        run: curl -sL -o /tmp/old.apk "https://github.com/${{ github.repository }}/releases/download/v2.0.0-test/NeuralDimension-2.0.apk" && ls -la /tmp/old.apk
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -99,6 +97,7 @@ jobs:
           ND_TEST_APP_TOKEN: ${{ inputs.build_type == 'debug' && 'ci-mock-token' || '' }}
           ND_RELEASE_GATE: ${{ inputs.build_type == 'release' && '1' || '0' }}
           ND_SECTIONS: ${{ inputs.sections || 'all' }}
+          BUILD_TYPE: ${{ inputs.build_type }}
         with:
           api-level: 34
           target: google_apis
@@ -107,29 +106,7 @@ jobs:
           force-avd-creation: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
-          script: |
-            mkdir -p shots
-            # Migration/update gate: seed the DELIVERED v2.0.1, then upgrade in place
-            curl -sL -o /tmp/old.apk https://github.com/Rout-Pro/max-neural-dimension/releases/download/v2.0.1/NeuralDimension-2.0.1.apk
-            adb install /tmp/old.apk
-            python3 tools/seed_upgrade.py
-            # NOTE: no double quotes anywhere in this script - the runner's sh -c
-            # quoting truncates at the first one (proven run 42225165314: dash hit
-            # EOF expecting fi). Single quotes are fine.
-            if [ ${{ inputs.build_type }} = release ]; then
-              APK=app/build/outputs/apk/release/NeuralDimension-release.apk
-            else
-              APK=app/build/outputs/apk/debug/NeuralDimension-2.0.apk
-            fi
-            adb install -r $APK
-            if [ ${{ inputs.build_type }} = debug ]; then
-              # Debug loop only: pre-launch DataStore byte proof via run-as (release
-              # is not debuggable; release preservation is UI-level in the driver).
-              adb exec-out run-as com.max.neuraldimension cat files/datastore/max_settings.preferences_pb > /tmp/pb_prelaunch.bin
-              grep -q seed-settings-v1 /tmp/pb_prelaunch.bin && echo 'PASS upgrade(pre-launch): seeded backend URL preserved in DataStore' || { echo 'FAIL upgrade(pre-launch): seeded backend URL missing'; exit 1; }
-              grep -q SeedUserV1 /tmp/pb_prelaunch.bin && echo 'PASS upgrade(pre-launch): seeded profile name preserved in DataStore' || { echo 'FAIL upgrade(pre-launch): seeded profile name missing'; exit 1; }
-            fi
-            python3 tools/drive_ui.py
+          script: bash tools/run_ui_pass.sh
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
