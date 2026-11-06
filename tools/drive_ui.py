@@ -749,6 +749,7 @@ if BACKEND_TEST:
     if want('clipping'):
         # === Section 9: clipping - overflow pinning, IME close, history readability ===
         fresh_conversation()
+        adb('logcat', '-c')
         sent = 0
         # long probe text: tall user bubbles so 6 pairs reliably overflow the viewport
         for i in range(6):
@@ -782,6 +783,13 @@ if BACKEND_TEST:
             return xml, nodes, hdr, msgs, inp_top
 
         xml, nodes, hdr_bottom, msgs, inp_top = settle_and_measure()
+        with open('shots/clipping_settled.xml', 'w') as f:
+            f.write(xml)
+        lg = subprocess.run(['adb', 'logcat', '-d', '-s', 'NDCLIP'], capture_output=True, text=True).stdout
+        with open('shots/clipping_logcat.txt', 'w') as f:
+            f.write(lg)
+        for line in lg.splitlines()[-30:]:
+            print('NDCLIP>', line); sys.stdout.flush()
         shot('p2-clipping-settled')
         assert_true('clipping: header present', hdr_bottom > 0)
         overlaps = [n for n in msgs if n['b'][1] < hdr_bottom < n['b'][3]]

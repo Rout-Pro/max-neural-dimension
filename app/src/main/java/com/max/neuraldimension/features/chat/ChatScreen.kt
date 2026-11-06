@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import android.util.Log
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
@@ -168,9 +169,13 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
         if (scrollCount == 0) return@LaunchedEffect
         val lastIsUser =
             (if (incognito) incognitoMessages else messages).lastOrNull()?.role == "user"
+        // TEMP diagnostic for the stranded-scroll investigation
+        Log.d("NDCLIP", "fire count=$scrollCount pulledUp=$userPulledUp lastUser=$lastIsUser " +
+            "pre idx=${listState.firstVisibleItemIndex} off=${listState.firstVisibleItemScrollOffset} ime=$imeBottom")
         if (!userPulledUp || lastIsUser) {
             listState.scrollToItem(0)
             userPulledUp = false
+            Log.d("NDCLIP", "pinned post idx=${listState.firstVisibleItemIndex} off=${listState.firstVisibleItemScrollOffset}")
         }
     }
 
