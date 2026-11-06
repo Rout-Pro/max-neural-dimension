@@ -895,6 +895,43 @@ if want('studio'):
         out = subprocess.run(['adb', 'shell', 'ls', '/storage/emulated/0/Download/NeuralDimension/'],
                              capture_output=True, text=True).stdout
         assert_true('studio: exported file exists in Downloads', 'StudioTest.html' in out)
+        # end-to-end export bytes: pull the actual exported file and inspect content
+        subprocess.run(['adb', 'pull', '/storage/emulated/0/Download/NeuralDimension/StudioTest.html', '/tmp/exported-studio.html'],
+                       capture_output=True)
+        try:
+            exported = open('/tmp/exported-studio.html').read()
+            assert_true('studio: exported bytes have CSS inlined', '<style>' in exported and 'font-family' in exported)
+            assert_true('studio: exported bytes have JS inlined', "console.log('studio-ready')" in exported)
+            assert_true('studio: exported bytes have no leftover local refs',
+                        'href="style.css"' not in exported and 'src="script.js"' not in exported)
+        except Exception as e:
+            assert_true('studio: exported file readable for content check', False)
+    # React template export: CDN deps must remain external (not bundled)
+    if tap_text('Back to projects', timeout=6):
+        time.sleep(2)
+        if tap_text('New project name', timeout=6):
+            time.sleep(1)
+            type_text('ReactExp')
+            time.sleep(1)
+            tap_text('React (CDN)', timeout=4)
+            time.sleep(1)
+            tap_text('Create project', timeout=5)
+            time.sleep(3)
+        if tap_text('Export project as single HTML file', timeout=6):
+            time.sleep(3)
+            subprocess.run(['adb', 'pull', '/storage/emulated/0/Download/NeuralDimension/ReactExp.html', '/tmp/exported-react.html'],
+                           capture_output=True)
+            try:
+                rex = open('/tmp/exported-react.html').read()
+                assert_true('studio: react export keeps CDN external', 'https://unpkg.com/react@18' in rex)
+                assert_true('studio: react export preserves text/babel', 'text/babel' in rex)
+                assert_true('studio: react export inlines local js', "console.log('studio-ready')" in rex)
+            except Exception:
+                assert_true('studio: react export readable', False)
+        tap_text('Back to projects', timeout=6)
+        time.sleep(2)
+        if tap_text('Delete project', timeout=4):
+            time.sleep(2)
     # back, list, delete
     tap_text('Back to projects', timeout=6)
     time.sleep(2)
