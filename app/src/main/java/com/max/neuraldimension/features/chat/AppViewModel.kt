@@ -7,6 +7,8 @@ import com.max.neuraldimension.core.gl.RobotState
 import com.max.neuraldimension.data.db.AppDb
 import com.max.neuraldimension.data.db.Conversation
 import com.max.neuraldimension.data.db.Message
+import com.max.neuraldimension.data.db.Note
+import com.max.neuraldimension.data.db.Reminder
 import com.max.neuraldimension.data.db.TaskItem
 import com.max.neuraldimension.data.prefs.MaxSettings
 import com.max.neuraldimension.data.prefs.SettingsRepository
@@ -24,6 +26,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppViewModel(app: Application) : AndroidViewModel(app) {
@@ -248,6 +251,54 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             db.chatDao().deleteMessagesFor(c.id)
             db.chatDao().deleteConversation(c)
             if (currentConversationId.value == c.id) currentConversationId.value = null
+        }
+    }
+
+    val notes: StateFlow<List<Note>> =
+        db.noteDao().notes().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val reminders: StateFlow<List<Reminder>> =
+        db.reminderDao().reminders().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun addNote(text: String) {
+        if (text.isBlank()) return
+        viewModelScope.launch { db.noteDao().insert(Note(text = text.trim())) }
+    }
+
+    fun deleteNote(n: Note) {
+        viewModelScope.launch { db.noteDao().delete(n) }
+    }
+
+    /** Schedules a real WorkManager reminder; returns the new reminder id or -1. */
+    fun addReminder(title: String, inMinutes: Int) {
+        if (title.isBlank() || inMinutes < 0) return
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val triggerAt = System.currentTimeMillis() + inMinutes * 60_000L
+            val id = db.reminderDao().insert(Reminder(title = title.trim(), triggerAt = triggerAt))
+            val data = androidx.work.Data.Builder()
+                .putLong(com.max.neuraldimension.features.assistant.ReminderWorker.KEY_ID, id)
+                .putString(com.max.neuraldimension.features.assistant.ReminderWorker.KEY_TITLE, title.trim())
+                .build()
+            val work = androidx.work.OneTimeWorkRequestBuilder<com.max.neuraldimension.features.assistant.ReminderWorker>()
+                .setInitialDelay(inMinutes.toLong(), TimeUnit.MINUTES)
+                .setInputData(data)
+                .addTag("nd-reminder")
+                .build()
+            androidx.work.WorkManager.getInstance(app).enqueue(work)
+            db.reminderDao().update(Reminder(id = id, title = title.trim(), triggerAt = triggerAt, workId = work.id.toString()))
+        }
+    }
+
+    fun deleteReminder(r: Reminder) {
+        viewModelScope.launch {
+            if (r.workId.isNotBlank()) {
+                runCatching {
+                    androidx.work.WorkManager.getInstance(getApplication<Application>())
+                        .cancelWorkById(java.util.UUID.fromString(r.workId))
+                }
+            }
+            db.reminderDao().delete(r)
         }
     }
 

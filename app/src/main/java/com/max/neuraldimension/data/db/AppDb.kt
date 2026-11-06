@@ -79,6 +79,49 @@ interface ChatDao {
     suspend fun allAttachmentPaths(): List<String?>
 }
 
+@Entity(tableName = "notes")
+data class Note(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val text: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(tableName = "reminders")
+data class Reminder(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val title: String,
+    val triggerAt: Long,
+    val workId: String = "",
+    val fired: Boolean = false
+)
+
+@Dao
+interface NoteDao {
+    @Query("SELECT * FROM notes ORDER BY createdAt DESC")
+    fun notes(): Flow<List<Note>>
+
+    @Insert
+    suspend fun insert(n: Note): Long
+
+    @Delete
+    suspend fun delete(n: Note)
+}
+
+@Dao
+interface ReminderDao {
+    @Query("SELECT * FROM reminders ORDER BY triggerAt ASC")
+    fun reminders(): Flow<List<Reminder>>
+
+    @Insert
+    suspend fun insert(r: Reminder): Long
+
+    @Update
+    suspend fun update(r: Reminder)
+
+    @Delete
+    suspend fun delete(r: Reminder)
+}
+
 @Dao
 interface TaskDao {
     @Query("SELECT * FROM tasks ORDER BY done ASC, createdAt DESC")
@@ -102,16 +145,25 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
-@Database(entities = [Conversation::class, Message::class, TaskItem::class], version = 2, exportSchema = false)
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, text TEXT NOT NULL, createdAt INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE IF NOT EXISTS reminders (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, title TEXT NOT NULL, triggerAt INTEGER NOT NULL, workId TEXT NOT NULL DEFAULT '', fired INTEGER NOT NULL DEFAULT 0)")
+    }
+}
+
+@Database(entities = [Conversation::class, Message::class, TaskItem::class, Note::class, Reminder::class], version = 3, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun chatDao(): ChatDao
     abstract fun taskDao(): TaskDao
+    abstract fun noteDao(): NoteDao
+    abstract fun reminderDao(): ReminderDao
 
     companion object {
         @Volatile private var instance: AppDb? = null
         fun get(context: Context): AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "max.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build().also { instance = it }
         }
     }

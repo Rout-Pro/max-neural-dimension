@@ -838,6 +838,49 @@ if BACKEND_TEST:
     print('PHASE2-COVERAGE picker=' + ('ok' if PICKER['ok'] else 'MISS'))
     sys.stdout.flush()
 
+if want('remind'):
+    # === Phase 6: Part 17 slice - Notes (Room) + Reminders (WorkManager -> real notification) ===
+    dismiss_keyboard()
+    tap_nav('Tools', timeout=8)
+    time.sleep(3)
+    if tap_text('Add a note...', timeout=8):
+        time.sleep(1)
+        type_text('nd-test-note')
+        time.sleep(1)
+        tap_text('Save note', timeout=5)
+        time.sleep(2)
+    assert_true('remind: note listed', 'nd-test-note' in dump())
+    # reminders card is below; scroll until visible
+    for _ in range(3):
+        swipe_up(); time.sleep(1)
+        if 'Reminder title...' in dump():
+            break
+    if tap_text('Reminder title...', exact=True, timeout=8):
+        time.sleep(1)
+        type_text('nd-test-reminder')
+        time.sleep(1)
+        dismiss_keyboard()
+        if tap_text('min', exact=True, timeout=5):
+            time.sleep(1)
+            type_text('1')
+            time.sleep(1)
+            dismiss_keyboard()
+        tap_text('Schedule', timeout=5)
+        time.sleep(2)
+        tap_text('Allow', timeout=4)  # notification permission dialog (API 33+)
+        time.sleep(2)
+    xml = dump()
+    assert_true('remind: reminder listed', 'nd-test-reminder' in xml)
+    shot('p6-reminders')
+    # observed effect: wait for WorkManager to fire, then check posted notifications
+    time.sleep(100)
+    out = subprocess.run(['adb', 'shell', 'dumpsys', 'notification'], capture_output=True, text=True).stdout
+    assert_true('remind: system notification posted (observed effect)',
+                'nd-test-reminder' in out or 'MAX Reminder' in out)
+    # cleanup: cancel the reminder entry
+    if tap_text('Cancel', timeout=5):
+        time.sleep(2)
+
 if want('device'):
     # === Phase 5: Part 18 phone integration surfaces in Tools (all real/local) ===
     dismiss_keyboard()

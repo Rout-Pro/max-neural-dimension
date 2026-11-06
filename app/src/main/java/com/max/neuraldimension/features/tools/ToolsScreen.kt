@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -117,6 +118,89 @@ fun ToolsScreen(vm: AppViewModel) {
             }
         }
 
+        // Notes (Room-backed)
+        ToolCard("Notes") {
+            val notes by vm.notes.collectAsState()
+            var newNote by remember { mutableStateOf("") }
+            notes.take(5).forEach { n ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(n.text, color = NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { vm.deleteNote(n) }) { Text("Delete", color = NdMuted, fontSize = 11.sp) }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = newNote, onValueChange = { newNote = it },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = NdSilver, fontSize = 13.sp),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(NdLavender),
+                    modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+                    decorationBox = { inner ->
+                        if (newNote.isEmpty()) Text("Add a note...", color = NdMuted, fontSize = 13.sp)
+                        inner()
+                    }
+                )
+                TextButton(onClick = { vm.addNote(newNote); newNote = "" }) { Text("Save note", color = NdLavender) }
+            }
+        }
+
+        // Reminders (WorkManager -> real system notification)
+        ToolCard("Reminders") {
+            val reminders by vm.reminders.collectAsState()
+            var remTitle by remember { mutableStateOf("") }
+            var remMins by remember { mutableStateOf("") }
+            var remStatus by remember { mutableStateOf<String?>(null) }
+            val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                if (!granted) remStatus = "Notification permission denied - reminder will not appear"
+            }
+            reminders.take(5).forEach { r ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val minsLeft = ((r.triggerAt - System.currentTimeMillis()) / 60000).coerceAtLeast(0)
+                    Text(
+                        (if (r.fired) "[fired] " else "") + r.title + " - in " + minsLeft + "m",
+                        color = if (r.fired) NdMuted else NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { vm.deleteReminder(r) }) { Text("Cancel", color = NdMuted, fontSize = 11.sp) }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = remTitle, onValueChange = { remTitle = it },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = NdSilver, fontSize = 13.sp),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(NdLavender),
+                    modifier = Modifier.weight(1f).padding(vertical = 8.dp),
+                    decorationBox = { inner ->
+                        if (remTitle.isEmpty()) Text("Reminder title...", color = NdMuted, fontSize = 13.sp)
+                        inner()
+                    }
+                )
+                androidx.compose.foundation.text.BasicTextField(
+                    value = remMins, onValueChange = { remMins = it.filter { c -> c.isDigit() }.take(4) },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = NdSilver, fontSize = 13.sp),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(NdLavender),
+                    modifier = Modifier.width(64.dp).padding(vertical = 8.dp),
+                    decorationBox = { inner ->
+                        if (remMins.isEmpty()) Text("min", color = NdMuted, fontSize = 13.sp)
+                        inner()
+                    }
+                )
+                TextButton(onClick = {
+                    val m = remMins.toIntOrNull()
+                    if (remTitle.isNotBlank() && m != null) {
+                        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                            androidx.core.content.ContextCompat.checkSelfPermission(
+                                context, android.Manifest.permission.POST_NOTIFICATIONS) !=
+                            android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                        vm.addReminder(remTitle, m)
+                        remTitle = ""; remMins = ""
+                        remStatus = "Scheduled via WorkManager (timing may be deferred by battery policy)"
+                    }
+                }) { Text("Schedule", color = NdLavender) }
+            }
+            remStatus?.let { Text(it, color = NdMuted, fontSize = 11.sp) }
+        }
+
         // Flashlight (real torch via CameraManager)
         ToolCard("Flashlight") {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -177,7 +261,7 @@ fun ToolsScreen(vm: AppViewModel) {
 
         // Volume + system shortcuts (real)
         ToolCard("Controls") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = {
                     val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
                     am.adjustVolume(AudioManager.ADJUST_SAME, AudioManager.FLAG_SHOW_UI)
@@ -217,7 +301,7 @@ fun ToolsScreen(vm: AppViewModel) {
 
         ToolCard("Coming in later phases") {
             Text(
-                "Reminders and alarms, notes, calendar and weather, image and video generation. Each arrives only when it genuinely works.",
+                "Calendar and weather, habit and expense tracking, daily briefing, image and video generation. Each arrives only when it genuinely works.",
                 color = NdMuted, fontSize = 12.sp
             )
         }
