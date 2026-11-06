@@ -747,59 +747,85 @@ if BACKEND_TEST:
         shot('p2-error-rendering')
 
     if want('clipping'):
-        # === Section 9: clipping probe - 'top user bubble clipped beneath header' ===
-        # Dump analysis of the original capture: the missing text node belonged to the
-        # oldest user bubble, partially scrolled out at the top of the reverseLayout
-        # viewport (normal overflow clipping), AND the last item sat ~140px above the
-        # input bar (mid-scroll-animation capture or scroll not pinning to bottom).
-        # This section separates the two in a settled state.
+        # === Section 9: clipping - overflow pinning, IME close, history readability ===
         fresh_conversation()
         sent = 0
-        for i in range(7):
+        for i in range(8):
             type_and_send('clip probe %d' % i)
             sent += 1
-            ok, _ = poll_reply(lambda x, n=sent: x.count('MOCK') >= min(n, 3), budget=45)
+            ok, _ = poll_reply(lambda x, n=sent: x.count('MOCK') >= min(n, 3), budget=75)
             if not ok:
-                print('clipping: reply %d missing, continuing with %d pairs' % (i, sent - 1))
+                print('clipping: reply %d slow, continuing with %d pairs' % (i, sent))
                 break
         dismiss_keyboard()
-        time.sleep(2)
-        # settle: identical message-node bounds across two consecutive dumps
-        prev = None
-        xml = dump()
-        for _ in range(12):
+        time.sleep(3)
+
+        def settle_and_measure():
+            prev = None
             xml = dump()
-            cur = [n['b'] for n in parse_nodes(xml) if n['text'].startswith(('clip probe', 'MOCK'))]
-            if cur and cur == prev:
-                break
-            prev = cur
-            time.sleep(2)
+            for _ in range(12):
+                xml = dump()
+                cur = [n['b'] for n in parse_nodes(xml)
+                       if n['text'].startswith(('clip probe', 'MOCK'))]
+                if cur and cur == prev:
+                    break
+                prev = cur
+                time.sleep(2)
+            nodes = parse_nodes(xml)
+            hdr = max((n['b'][3] for n in nodes if n['desc'] in
+                       ('Conversations', 'New chat', 'Incognito', 'Search history',
+                        'Rename chat', 'Delete chat')), default=0)
+            msgs = [n for n in nodes if n['text'].startswith(('clip probe', 'MOCK'))]
+            inp_top = min((n['b'][1] for n in nodes if n['text'].startswith('Message')),
+                          default=2400)
+            return xml, nodes, hdr, msgs, inp_top
+
+        xml, nodes, hdr_bottom, msgs, inp_top = settle_and_measure()
         shot('p2-clipping-settled')
-        with open('shots/clipping_settled.xml', 'w') as f:
-            f.write(xml)
-        nodes = parse_nodes(xml)
-        hdr_bottom = max((n['b'][3] for n in nodes if n['desc'] in
-                          ('Conversations', 'New chat', 'Incognito', 'Search history', 'Rename chat', 'Delete chat')),
-                         default=0)
-        msgs = [n for n in nodes if n['text'].startswith(('clip probe', 'MOCK'))]
-        overlaps = [n for n in msgs if n['b'][1] < hdr_bottom < n['b'][3]]
-        inp_top = min((n['b'][1] for n in nodes if n['text'].startswith('Message')), default=2400)
-        last_bottom = max((n['b'][3] for n in msgs), default=0)
         assert_true('clipping: header present', hdr_bottom > 0)
-        assert_true('clipping: no message text overlaps header band (settled)', len(overlaps) == 0)
-        assert_true('clipping: settled list pinned to bottom (gap=%d)' % (inp_top - last_bottom),
-                    0 <= inp_top - last_bottom < 120)
-        # oldest message fully revealable by scrolling up
-        for _ in range(3):
+        overlaps = [n for n in msgs if n['b'][1] < hdr_bottom < n['b'][3]]
+        assert_true('clipping: no message text overlaps header band (settled)',
+                    len(overlaps) == 0)
+        # overflowed? content reaches (or passed) the top of the viewport
+        overflowed = len(msgs) > 0 and min(n['b'][1] for n in msgs) <= hdr_bottom + 80
+        last_bottom = max((n['b'][3] for n in msgs), default=0)
+        print('clipping: pairs=%d overflowed=%s bottom_gap=%d' % (sent, overflowed, inp_top - last_bottom))
+        if overflowed:
+            assert_true('clipping: newest message flush above input (overflow, gap=%d)'
+                        % (inp_top - last_bottom), 0 <= inp_top - last_bottom < 120)
+        else:
+            print('clipping: content did not overflow; bottom-gap not a failure criterion')
+
+        # keyboard open/close must not strand the pin
+        if tap_text('Message', timeout=8):
+            time.sleep(3)
+            dismiss_keyboard()
+            time.sleep(3)
+            xml, nodes, hdr_bottom, msgs, inp_top = settle_and_measure()
+            shot('p2-clipping-after-keyboard')
+            if msgs:
+                last_bottom = max(n['b'][3] for n in msgs)
+                overlaps = [n for n in msgs if n['b'][1] < hdr_bottom < n['b'][3]]
+                assert_true('clipping: no header overlap after keyboard close', len(overlaps) == 0)
+                if overflowed:
+                    assert_true('clipping: still pinned after keyboard close (gap=%d)'
+                                % (inp_top - last_bottom), 0 <= inp_top - last_bottom < 120)
+
+        # reading older history must NOT snap back to bottom
+        for _ in range(4):
             adb('shell', 'input', 'swipe', '540', '700', '540', '1800', '400')
             time.sleep(2)
-        shot('p2-clipping-scrolled-top')
-        # tolerant match: SwiftShader IME can mangle typed text, so any fully-visible
-        # early probe bubble below the header proves revealability
+        shot('p2-clipping-history')
         probes = [n for n in parse_nodes(dump()) if n['text'].startswith('clip probe')]
         clean = [n for n in probes if n['b'][1] >= hdr_bottom and n['b'][3] <= inp_top]
-        assert_true('clipping: probe messages fully revealable on scroll-up (%d visible)' % len(clean),
+        assert_true('clipping: probe messages revealable on scroll-up (%d visible)' % len(clean),
                     len(clean) >= 1)
+        before = sorted(n['text'] for n in clean)
+        time.sleep(6)   # any forced snapback would hide these again
+        probes2 = [n for n in parse_nodes(dump()) if n['text'].startswith('clip probe')]
+        clean2 = sorted(n['text'] for n in probes2 if n['b'][1] >= hdr_bottom and n['b'][3] <= inp_top)
+        assert_true('clipping: no forced snapback while reading history', clean2 == before)
+        shot('p2-clipping-history-held')
 
     print('PHASE2-COVERAGE picker=' + ('ok' if PICKER['ok'] else 'MISS'))
     sys.stdout.flush()

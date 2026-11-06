@@ -42,7 +42,21 @@
 - Real-mic STT: flagged for on-device verification by the user (their Vivo T4x),
   never claimed from emulator evidence.
 
+## On-device vs network - honesty requirements
+- TTS: Android TextToSpeech runs in a local engine and works offline once voice
+  data is present. Verify voice-data availability at runtime and say so plainly;
+  do not claim offline TTS if the device lacks downloaded voices.
+- STT: the default android.speech.SpeechRecognizer service MAY use network
+  recognition (e.g. Google voice typing) - the API alone does not establish
+  on-device/offline processing. On API 33+ prefer explicit
+  SpeechRecognizer.createOnDeviceSpeechRecognizer after checking
+  isOnDeviceRecognitionAvailable. If on-device recognition is unavailable, the
+  app must say recognition uses the device's speech service (which may use the
+  network) - never label it offline. On-device availability on the user's Vivo
+  T4x is a user-device check, not something emulator evidence can establish.
+
 ## Explicitly out of scope / gated
-- No cloud STT/TTS providers (paid, keys) - on-device Android APIs only.
+- No cloud STT/TTS provider accounts (paid, keys). System STT/TTS APIs only,
+  with the on-device checks above.
 - No wake-word background service in this phase (explicit activation only).
 - No provider-call verification until quota recovers (separately gated).

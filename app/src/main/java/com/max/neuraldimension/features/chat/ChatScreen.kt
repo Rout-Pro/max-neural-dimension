@@ -146,14 +146,21 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
     }
     val scrollCount = if (incognito) incognitoMessages.size else messages.size
     val scrollTail = (if (incognito) incognitoMessages else messages).lastOrNull()?.text?.length
-    // Pin to the newest message (item 0 = newest, reverseLayout). scrollToItem is
-    // atomic: animateScrollToItem could be cancelled mid-flight by retriggers or by
-    // the IME closing, leaving the list stuck above the bottom (old bubbles clipping
-    // at the header with a gap above the input). Re-key on imeBottom so a keyboard
-    // close re-pins after the viewport grows.
+    // Stick-to-bottom (item 0 = newest, reverseLayout). scrollToItem is atomic:
+    // animateScrollToItem could be cancelled mid-flight by retriggers or by the IME
+    // closing, leaving the list stranded above the bottom (old bubbles clipping at
+    // the header with a gap above the input). Re-pin only when the view is already
+    // at the bottom, or when the user just sent a message - never yank someone
+    // reading older history. Re-key on imeBottom so a keyboard close re-pins a
+    // bottom-pinned list after the viewport grows.
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
     LaunchedEffect(scrollCount, scrollTail, incognito, imeBottom) {
-        if (scrollCount > 0) listState.scrollToItem(0)
+        if (scrollCount == 0) return@LaunchedEffect
+        val atBottom = listState.firstVisibleItemIndex == 0 &&
+            listState.firstVisibleItemScrollOffset < 48
+        val lastIsUser =
+            (if (incognito) incognitoMessages else messages).lastOrNull()?.role == "user"
+        if (atBottom || lastIsUser) listState.scrollToItem(0)
     }
 
     Column(Modifier.fillMaxSize().background(NdBlack).statusBarsPadding().imePadding()) {
