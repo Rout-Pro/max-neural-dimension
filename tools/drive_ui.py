@@ -878,13 +878,17 @@ if want('upgrade'):
                         'cat', 'files/datastore/max_settings.preferences_pb'],
                        capture_output=True)
     pb = r.stdout
-    assert_true('upgrade: seeded backend URL preserved in DataStore', b'seed-settings-v1' in pb)
-    assert_true('upgrade: seeded profile name preserved in DataStore', b'SeedUserV1' in pb)
+    # NOTE: seeded backend URL is asserted PRE-LAUNCH in the workflow - by this
+    # point the ND_TEST_HOOK intent has legitimately rewritten backendUrl to the
+    # mock backend, so checking the seed value here would test the hook, not
+    # preservation (proven run 42218011334).
+    assert_true('upgrade: seeded profile name preserved in DataStore (post-launch)', b'SeedUserV1' in pb)
     # UI-level confirmation too
     tap_nav('Tools', timeout=12)
     time.sleep(3)
     xml = dump()
     assert_true('upgrade: seeded task visible in UI after migration', 'seed-task-v1' in xml)
+    shot('upgrade-after')
 
 
 if want('weather'):

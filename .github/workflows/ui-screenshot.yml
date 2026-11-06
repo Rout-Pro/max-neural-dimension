@@ -64,6 +64,14 @@ jobs:
             adb install /tmp/old.apk
             python3 tools/seed_upgrade.py
             adb install -r app/build/outputs/apk/debug/NeuralDimension-2.0.apk
+            # DataStore preservation must be asserted BEFORE the new build's first
+            # launch: the CI-only ND_TEST_HOOK intent (used by drive_ui to inject the
+            # mock backend) rewrites backendUrl on launch, so a post-launch check
+            # would test the hook, not preservation (run 42218011334). Pre-launch the
+            # pb file is exactly what install -r preserved - the truest check.
+            adb exec-out run-as com.max.neuraldimension cat files/datastore/max_settings.preferences_pb > /tmp/pb_prelaunch.bin
+            grep -q 'seed-settings-v1' /tmp/pb_prelaunch.bin && echo 'PASS upgrade(pre-launch): seeded backend URL preserved in DataStore' || { echo 'FAIL upgrade(pre-launch): seeded backend URL missing'; exit 1; }
+            grep -q 'SeedUserV1' /tmp/pb_prelaunch.bin && echo 'PASS upgrade(pre-launch): seeded profile name preserved in DataStore' || { echo 'FAIL upgrade(pre-launch): seeded profile name missing'; exit 1; }
             python3 tools/drive_ui.py
       - name: Upload screenshots
         if: always()
