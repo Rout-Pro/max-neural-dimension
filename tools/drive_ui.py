@@ -750,10 +750,11 @@ if BACKEND_TEST:
         # === Section 9: clipping - overflow pinning, IME close, history readability ===
         fresh_conversation()
         sent = 0
-        for i in range(8):
-            type_and_send('clip probe %d' % i)
+        # long probe text: tall user bubbles so 6 pairs reliably overflow the viewport
+        for i in range(6):
+            type_and_send('clip probe %d ' % i + 'x' * 90)
             sent += 1
-            ok, _ = poll_reply(lambda x, n=sent: x.count('MOCK') >= min(n, 3), budget=75)
+            ok, _ = poll_reply(lambda x, n=sent: x.count('MOCK') >= min(n, 3), budget=90)
             if not ok:
                 print('clipping: reply %d slow, continuing with %d pairs' % (i, sent))
                 break
@@ -786,10 +787,15 @@ if BACKEND_TEST:
         overlaps = [n for n in msgs if n['b'][1] < hdr_bottom < n['b'][3]]
         assert_true('clipping: no message text overlaps header band (settled)',
                     len(overlaps) == 0)
-        # overflowed? content reaches (or passed) the top of the viewport
-        overflowed = len(msgs) > 0 and min(n['b'][1] for n in msgs) <= hdr_bottom + 80
+        # real overflow = content span exceeds the list viewport (short content
+        # top-stacked under the header is NOT overflow - not a failure per main)
         last_bottom = max((n['b'][3] for n in msgs), default=0)
-        print('clipping: pairs=%d overflowed=%s bottom_gap=%d' % (sent, overflowed, inp_top - last_bottom))
+        first_top = min((n['b'][1] for n in msgs), default=0)
+        viewport = inp_top - hdr_bottom
+        span = last_bottom - first_top
+        overflowed = len(msgs) > 0 and span >= viewport - 40
+        print('clipping extent: pairs=%d viewport=%d content_span=%d overflowed=%s bottom_gap=%d'
+              % (sent, viewport, span, overflowed, inp_top - last_bottom))
         if overflowed:
             assert_true('clipping: newest message flush above input (overflow, gap=%d)'
                         % (inp_top - last_bottom), 0 <= inp_top - last_bottom < 120)
