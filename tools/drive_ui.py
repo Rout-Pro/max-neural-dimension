@@ -94,6 +94,18 @@ def swipe_up():
     adb('shell', 'input', 'swipe', '540', '2000', '540', '900', '300')
     time.sleep(1)
 
+def swipe_up_small():
+    adb('shell', 'input', 'swipe', '540', '1800', '540', '1200', '250')
+    time.sleep(0.8)
+
+def ensure_visible(text, max_swipes=14):
+    """Small swipes until text appears in the dump; avoids jumping past targets."""
+    for _ in range(max_swipes):
+        if text in dump():
+            return True
+        swipe_up_small()
+    return text in dump()
+
 def tap_field_below(label_prefix, timeout=12):
     # Tap the EditText directly below a label; scrolls down while searching.
     deadline = time.time() + timeout
@@ -886,6 +898,7 @@ if want('weather'):
     if tap_text('Refresh briefing', timeout=6):
         time.sleep(2)
         assert_true('weather: briefing aggregates local data', 'open task' in dump())
+    ensure_visible('City name...')
     if tap_text('City name...', timeout=8):
         time.sleep(1)
         type_text('Bhubaneswar')
@@ -905,10 +918,7 @@ if want('habits'):
     dismiss_keyboard()
     tap_nav('Tools', timeout=8)
     time.sleep(3)
-    for _ in range(4):
-        swipe_up(); time.sleep(1)
-        if 'Add a habit...' in dump():
-            break
+    ensure_visible('Add a habit...')
     if tap_text('Add a habit...', timeout=8):
         time.sleep(1)
         type_text('nd-test-habit')
@@ -920,6 +930,7 @@ if want('habits'):
     if tap_text('Mark today', timeout=6):
         time.sleep(2)
         assert_true('habits: streak becomes 1 (observed state change)', 'streak 1' in dump())
+    ensure_visible('Expense label...')
     if tap_text('Expense label...', timeout=8):
         time.sleep(1)
         type_text('nd-test-coffee')
@@ -942,6 +953,7 @@ if want('remind'):
     dismiss_keyboard()
     tap_nav('Tools', timeout=8)
     time.sleep(3)
+    ensure_visible('Add a note...')
     if tap_text('Add a note...', timeout=8):
         time.sleep(1)
         type_text('nd-test-note')
@@ -949,11 +961,7 @@ if want('remind'):
         tap_text('Save note', timeout=5)
         time.sleep(2)
     assert_true('remind: note listed', 'nd-test-note' in dump())
-    # reminders card is below; scroll until visible
-    for _ in range(3):
-        swipe_up(); time.sleep(1)
-        if 'Reminder title...' in dump():
-            break
+    ensure_visible('Reminder title...')
     if tap_text('Reminder title...', exact=True, timeout=8):
         time.sleep(1)
         type_text('nd-test-reminder')
@@ -988,7 +996,7 @@ if want('device'):
     xml = dump()
     assert_true('device: battery shown', 'Battery' in xml)
     assert_true('device: storage shown', 'Storage free' in xml)
-    assert_true('device: flashlight card present', 'Flashlight' in xml)
+    assert_true('device: flashlight card present', ensure_visible('Flashlight', max_swipes=6))
     for _ in range(3):
         swipe_up(); time.sleep(1.5)
     xml = dump()
@@ -1076,13 +1084,19 @@ if want('studio'):
                 assert_true('studio: react export readable', False)
         tap_text('Back to projects', timeout=6)
         time.sleep(2)
-    # back, list, delete
+    # back, list, delete both projects deterministically
     tap_text('Back to projects', timeout=6)
     time.sleep(2)
-    assert_true('studio: project listed', 'StudioTest' in dump())
-    if tap_text('Delete project', timeout=6):
-        time.sleep(2)
-        assert_true('studio: project deleted', 'StudioTest' not in dump())
+    xml = dump()
+    assert_true('studio: project listed', 'StudioTest' in xml and 'ReactExp' in xml)
+    tap_text('Delete project', timeout=6)
+    time.sleep(2)
+    xml = dump()
+    assert_true('studio: first project deleted', ('StudioTest' in xml) != ('ReactExp' in xml))
+    tap_text('Delete project', timeout=6)
+    time.sleep(2)
+    xml = dump()
+    assert_true('studio: both projects deleted', 'StudioTest' not in xml and 'ReactExp' not in xml)
 
 if want('voice3'):
     # === Phase 3 voice surface: honest recognition label + voice settings ===
