@@ -838,6 +838,23 @@ if BACKEND_TEST:
     print('PHASE2-COVERAGE picker=' + ('ok' if PICKER['ok'] else 'MISS'))
     sys.stdout.flush()
 
+if want('voice3'):
+    # === Phase 3 voice surface: honest recognition label + voice settings ===
+    # (mic/STT untestable on emulator - no mic tap, no provider calls)
+    dismiss_keyboard()
+    tap_nav('Voice', timeout=8)
+    time.sleep(3)
+    xml = dump()
+    assert_true('voice3: recognition path label shown', 'Recognition:' in xml)
+    assert_true('voice3: recognition label is honest (on-device or may-use-network)',
+                ('on-device recognizer' in xml) or ('may use network' in xml) or ('not available' in xml))
+    shot('p3-voice-screen')
+    tap_nav('Settings', timeout=8)
+    time.sleep(3)
+    xml = dump()
+    assert_true('voice3: settings Voice section', 'Speech rate' in xml)
+    shot('p3-voice-settings')
+
 if want('tail'):
 
     # Voice tab
