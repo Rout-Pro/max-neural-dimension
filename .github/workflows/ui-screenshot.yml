@@ -4,9 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       sections:
-        description: 'Comma list: all,migration,core,regen,rename,edit,attachments,conv2,incognito,delete,errors,tail (smoke gate always runs)'
+        description: 'Comma list: all,migration,core,regen,rename,edit,attachments,conv2,incognito,delete,errors,upgrade,weather,habits,remind,device,studio,voice3,tail (smoke gate always runs)'
         required: false
         default: 'all'
+      build_type:
+        description: 'debug (hook+mock, dev loop) or release (actual candidate: hook-free, HTTPS-only, no mock)'
+        required: false
+        type: choice
+        options: [debug, release]
+        default: 'debug'
 
 jobs:
   ui:
@@ -18,9 +24,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Build APK
+      - name: Build debug APK (test hook, dev loop)
+        if: inputs.build_type == 'debug'
         run: bash gradlew :app:assembleDebug --no-daemon -PND_TEST_HOOK=true
-      - name: Sign APK (persistent key)
+      - name: Build release APK (actual candidate)
+        if: inputs.build_type == 'release'
+        run: bash gradlew :app:assembleRelease --no-daemon
+      - name: Sign debug APK (persistent key)
+        if: inputs.build_type == 'debug'
         env:
           ND_KEYSTORE_BASE64: ${{ secrets.ND_KEYSTORE_BASE64 }}
           ND_KEYSTORE_PASSWORD: ${{ secrets.ND_KEYSTORE_PASSWORD }}
@@ -31,6 +42,42 @@ jobs:
           APKSIGNER=$(ls "$ANDROID_HOME/build-tools/"*/apksigner | sort -V | tail -1)
           "$APKSIGNER" sign --ks "$RUNNER_TEMP/nd.keystore" --ks-pass "pass:$ND_KEYSTORE_PASSWORD" --ks-key-alias "$ND_KEY_ALIAS" --key-pass "pass:$ND_KEY_PASSWORD" --out app/build/outputs/apk/debug/NeuralDimension-2.0.apk app/build/outputs/apk/debug/app-debug.apk
           rm -f "$RUNNER_TEMP/nd.keystore"
+      - name: Sign release APK (persistent key)
+        if: inputs.build_type == 'release'
+        env:
+          ND_KEYSTORE_BASE64: ${{ secrets.ND_KEYSTORE_BASE64 }}
+          ND_KEYSTORE_PASSWORD: ${{ secrets.ND_KEYSTORE_PASSWORD }}
+          ND_KEY_ALIAS: ${{ secrets.ND_KEY_ALIAS }}
+          ND_KEY_PASSWORD: ${{ secrets.ND_KEY_PASSWORD }}
+        run: |
+          echo "$ND_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/nd.keystore"
+          APKSIGNER=$(ls "$ANDROID_HOME/build-tools/"*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" sign --ks "$RUNNER_TEMP/nd.keystore" --ks-pass "pass:$ND_KEYSTORE_PASSWORD" --ks-key-alias "$ND_KEY_ALIAS" --key-pass "pass:$ND_KEY_PASSWORD" --out app/build/outputs/apk/release/NeuralDimension-release.apk app/build/outputs/apk/release/app-release-unsigned.apk
+          rm -f "$RUNNER_TEMP/nd.keystore"
+      - name: Release artifact assertions (actual candidate)
+        if: inputs.build_type == 'release'
+        run: |
+          set -e
+          AAPT=$(ls "$ANDROID_HOME/build-tools/"*/aapt | sort -V | tail -1)
+          APKSIGNER=$(ls "$ANDROID_HOME/build-tools/"*/apksigner | sort -V | tail -1)
+          APK=app/build/outputs/apk/release/NeuralDimension-release.apk
+          # hook-free + HTTPS-only (same greps as the Build workflow's distributed-APK gate)
+          if "$AAPT" list -a "$APK" | grep -q "nd_debug_network"; then echo "::error::cleartext mock config leaked"; exit 1; fi
+          if "$AAPT" list -a "$APK" | grep -q "nd_test_hook\|ND_TEST_HOOK=true"; then echo "::error::test hook leaked"; exit 1; fi
+          # debuggable must be exactly false in the manifest
+          DBG=$("$AAPT" dump xmltree "$APK" AndroidManifest.xml | grep -i 'debuggable' || true)
+          echo "manifest debuggable: $DBG"
+          if echo "$DBG" | grep -q '0x12)0xffffffff'; then echo "::error::release APK is debuggable"; exit 1; fi
+          # versionCode invariant: must exceed delivered v2.0.1 (=3)
+          VC=$("$AAPT" dump badging "$APK" | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p")
+          echo "versionCode: $VC"
+          if [ "$VC" -le 3 ]; then echo "::error::versionCode $VC not > 3"; exit 1; fi
+          # same-signing as the DELIVERED v2.0.1 APK (cert digests must match)
+          curl -sL -o /tmp/delivered-2.0.1.apk https://github.com/${{ github.repository }}/releases/download/v2.0.1/NeuralDimension-2.0.1.apk
+          "$APKSIGNER" verify --print-certs "$APK" | grep -i 'SHA-256' | sed 's/.*: //' | tr -d ' ' | tr 'A-F' 'a-f' | sort > /tmp/cert-new.txt
+          "$APKSIGNER" verify --print-certs /tmp/delivered-2.0.1.apk | grep -i 'SHA-256' | sed 's/.*: //' | tr -d ' ' | tr 'A-F' 'a-f' | sort > /tmp/cert-old.txt
+          if ! diff /tmp/cert-new.txt /tmp/cert-old.txt; then echo "::error::signing certificate differs from delivered v2.0.1"; exit 1; fi
+          echo "PASS release artifact: hook-free, HTTPS-only, debuggable=false, versionCode=$VC>3, same-signing as v2.0.1"
       - name: Download previous release APK (migration source)
         run: curl -sL -o /tmp/old.apk "https://github.com/${{ github.repository }}/releases/download/v2.0.0-test/NeuralDimension-2.0.apk" && ls -la /tmp/old.apk
       - name: Enable KVM
@@ -38,16 +85,19 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Start mock backend (no provider calls)
+      - name: Start mock backend (debug only - no provider calls)
+        if: inputs.build_type == 'debug'
         run: nohup python3 tools/mock_backend.py > /tmp/mock_backend.log 2>&1 & sleep 1; curl -s http://127.0.0.1:8787/v1/health
       - name: Boot emulator, install, drive UI, capture screens
         uses: reactivecircus/android-emulator-runner@v2
         env:
-          # Mock backend only: deterministic app-logic evidence with ZERO provider
-          # calls (Gemini free quota is preserved; live-provider verification is a
-          # separate, quota-gated batch). Replies are visibly prefixed "MOCK".
-          ND_TEST_BACKEND_URL: http://10.0.2.2:8787
-          ND_TEST_APP_TOKEN: ci-mock-token
+          # Debug only: mock backend over cleartext loopback. Release keeps the
+          # app's HTTPS-only policy - the http mock is intentionally incompatible,
+          # so backend-dependent sections are skipped as explicitly unresolved
+          # rather than weakening the release policy for test convenience.
+          ND_TEST_BACKEND_URL: ${{ inputs.build_type == 'debug' && 'http://10.0.2.2:8787' || '' }}
+          ND_TEST_APP_TOKEN: ${{ inputs.build_type == 'debug' && 'ci-mock-token' || '' }}
+          ND_RELEASE_GATE: ${{ inputs.build_type == 'release' && '1' || '0' }}
           ND_SECTIONS: ${{ inputs.sections || 'all' }}
         with:
           api-level: 34
@@ -63,15 +113,19 @@ jobs:
             curl -sL -o /tmp/old.apk https://github.com/Rout-Pro/max-neural-dimension/releases/download/v2.0.1/NeuralDimension-2.0.1.apk
             adb install /tmp/old.apk
             python3 tools/seed_upgrade.py
-            adb install -r app/build/outputs/apk/debug/NeuralDimension-2.0.apk
-            # DataStore preservation must be asserted BEFORE the new build's first
-            # launch: the CI-only ND_TEST_HOOK intent (used by drive_ui to inject the
-            # mock backend) rewrites backendUrl on launch, so a post-launch check
-            # would test the hook, not preservation (run 42218011334). Pre-launch the
-            # pb file is exactly what install -r preserved - the truest check.
-            adb exec-out run-as com.max.neuraldimension cat files/datastore/max_settings.preferences_pb > /tmp/pb_prelaunch.bin
-            grep -q 'seed-settings-v1' /tmp/pb_prelaunch.bin && echo 'PASS upgrade(pre-launch): seeded backend URL preserved in DataStore' || { echo 'FAIL upgrade(pre-launch): seeded backend URL missing'; exit 1; }
-            grep -q 'SeedUserV1' /tmp/pb_prelaunch.bin && echo 'PASS upgrade(pre-launch): seeded profile name preserved in DataStore' || { echo 'FAIL upgrade(pre-launch): seeded profile name missing'; exit 1; }
+            if [ "${{ inputs.build_type }}" = "release" ]; then
+              APK=app/build/outputs/apk/release/NeuralDimension-release.apk
+            else
+              APK=app/build/outputs/apk/debug/NeuralDimension-2.0.apk
+            fi
+            adb install -r "$APK"
+            if [ "${{ inputs.build_type }}" = "debug" ]; then
+              # Debug loop only: pre-launch DataStore byte proof via run-as (release
+              # is not debuggable; release preservation is UI-level in the driver).
+              adb exec-out run-as com.max.neuraldimension cat files/datastore/max_settings.preferences_pb > /tmp/pb_prelaunch.bin
+              grep -q 'seed-settings-v1' /tmp/pb_prelaunch.bin && echo 'PASS upgrade(pre-launch): seeded backend URL preserved in DataStore' || { echo 'FAIL upgrade(pre-launch): seeded backend URL missing'; exit 1; }
+              grep -q 'SeedUserV1' /tmp/pb_prelaunch.bin && echo 'PASS upgrade(pre-launch): seeded profile name preserved in DataStore' || { echo 'FAIL upgrade(pre-launch): seeded profile name missing'; exit 1; }
+            fi
             python3 tools/drive_ui.py
       - name: Upload screenshots
         if: always()
