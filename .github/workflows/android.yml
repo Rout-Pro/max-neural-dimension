@@ -15,6 +15,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Run JVM unit tests
+        run: bash gradlew :app:testDebugUnitTest --no-daemon --stacktrace
       - name: Assemble release APK
         run: bash gradlew :app:assembleRelease --no-daemon --stacktrace
       - name: Verify distributed APK stays HTTPS-only and test-hook-free

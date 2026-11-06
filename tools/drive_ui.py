@@ -838,6 +838,26 @@ if BACKEND_TEST:
     print('PHASE2-COVERAGE picker=' + ('ok' if PICKER['ok'] else 'MISS'))
     sys.stdout.flush()
 
+if want('device'):
+    # === Phase 5: Part 18 phone integration surfaces in Tools (all real/local) ===
+    dismiss_keyboard()
+    tap_nav('Tools', timeout=8)
+    time.sleep(3)
+    xml = dump()
+    assert_true('device: battery shown', 'Battery' in xml)
+    assert_true('device: storage shown', 'Storage free' in xml)
+    assert_true('device: flashlight card present', 'Flashlight' in xml)
+    for _ in range(4):
+        swipe_up(); time.sleep(1.5)
+    xml = dump()
+    assert_true('device: diagnostics (model/uptime)', 'Model:' in xml and 'Uptime' in xml)
+    assert_true('device: RAM shown', 'RAM free' in xml)
+    assert_true('device: open apps lists launchable apps', 'Open apps' in xml and 'Settings' in xml)
+    assert_true('device: media volume control', 'Media volume' in xml)
+    assert_true('device: notifications shortcut', 'Notifications' in xml)
+    assert_true('device: camera shortcut', 'Camera' in xml)
+    shot('p5-tools-device')
+
 if want('studio'):
     # === Phase 4: Web Studio - local project create/edit/run/console/export ===
     # Fully on-device; zero provider calls.

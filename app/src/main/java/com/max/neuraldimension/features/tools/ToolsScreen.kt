@@ -7,7 +7,11 @@ import android.media.AudioManager
 import android.os.BatteryManager
 import android.os.Environment
 import android.os.StatFs
+import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
+import android.app.ActivityManager
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -23,7 +27,15 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,6 +61,7 @@ import com.max.neuraldimension.core.theme.NdViolet
 import com.max.neuraldimension.data.db.TaskItem
 import com.max.neuraldimension.features.chat.AppViewModel
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ToolsScreen(vm: AppViewModel) {
     val context = LocalContext.current
@@ -138,6 +151,32 @@ fun ToolsScreen(vm: AppViewModel) {
             val freeGb = stat.availableBytes / (1024f * 1024f * 1024f)
             val totalGb = stat.totalBytes / (1024f * 1024f * 1024f)
             Text("Storage free: %.1f GB of %.1f GB".format(freeGb, totalGb), color = NdSilver, fontSize = 13.sp)
+            val am2 = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val mi = ActivityManager.MemoryInfo().also { am2.getMemoryInfo(it) }
+            Text("RAM free: %.1f GB of %.1f GB".format(mi.availMem / (1024f*1024f*1024f), mi.totalMem / (1024f*1024f*1024f)), color = NdSilver, fontSize = 13.sp)
+            Text("Model: ${Build.MODEL} - Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})", color = NdSilver, fontSize = 13.sp)
+            val upMin = SystemClock.elapsedRealtime() / 60000
+            Text("Uptime: ${upMin / 60}h ${upMin % 60}m", color = NdSilver, fontSize = 13.sp)
+        }
+
+        // Open installed apps (real launches)
+        ToolCard("Open apps") {
+            val pm = context.packageManager
+            val apps = remember {
+                pm.queryIntentActivities(android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER), 0)
+                    .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
+                    .distinctBy { it.first }
+                    .sortedBy { it.second.lowercase() }
+                    .take(12)
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                apps.forEach { (pkg, label) ->
+                    TextButton(onClick = {
+                        pm.getLaunchIntentForPackage(pkg)?.let { context.startActivity(it) }
+                    }) { Text(label, color = NdSilver, fontSize = 12.sp) }
+                }
+            }
+            if (apps.isEmpty()) Text("No launchable apps found", color = NdMuted, fontSize = 12.sp)
         }
 
         // Volume + system shortcuts (real)
@@ -153,13 +192,36 @@ fun ToolsScreen(vm: AppViewModel) {
                 TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }) {
                     Text("Bluetooth", color = NdLavender, fontSize = 12.sp)
                 }
+                TextButton(onClick = {
+                    val i = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    context.startActivity(i)
+                }) { Text("Notifications", color = NdLavender, fontSize = 12.sp) }
+                TextButton(onClick = {
+                    val i = Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
+                    if (i.resolveActivity(context.packageManager) != null) context.startActivity(i)
+                }) { Text("Camera", color = NdLavender, fontSize = 12.sp) }
+            }
+            val am3 = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val maxVol = am3.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            var vol by remember { mutableStateOf(am3.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Media volume", color = NdMuted, fontSize = 11.sp)
+                Slider(
+                    value = vol,
+                    onValueChange = {
+                        vol = it
+                        am3.setStreamVolume(AudioManager.STREAM_MUSIC, it.toInt(), 0)
+                    },
+                    valueRange = 0f..maxVol.toFloat(),
+                    colors = SliderDefaults.colors(activeTrackColor = NdViolet, thumbColor = NdNeon)
+                )
             }
         }
 
         ToolCard("Coming in later phases") {
             Text(
-                "Reminders and alarms, notes, calendar and weather, open-app launcher, web development studio, image and video generation. " +
-                    "Each arrives only when it genuinely works.",
+                "Reminders and alarms, notes, calendar and weather, image and video generation. Each arrives only when it genuinely works.",
                 color = NdMuted, fontSize = 12.sp
             )
         }

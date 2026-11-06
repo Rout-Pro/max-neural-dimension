@@ -63,29 +63,36 @@ class StudioStore(context: Context) {
      * Single self-contained HTML document: style.css inlined into <style>,
      * script.js into <script>. External CDN links (React etc.) pass through.
      */
-    fun combinedHtml(p: StudioProject): String {
-        val html = File(p.dir, "index.html").let { if (it.exists()) read(it) else "" }
-        val css = File(p.dir, "style.css").let { if (it.exists()) read(it) else "" }
-        val js = File(p.dir, "script.js").let { if (it.exists()) read(it) else "" }
-        var doc = html
-        // Inline local css/js - the preview loads from a data document, so file
-        // references would not resolve. Element attributes (e.g. text/babel) survive.
-        if (css.isNotBlank()) {
-            val linkRe = Regex("<link[^>]*href=[\"']style\\.css[\"'][^>]*>", RegexOption.IGNORE_CASE)
-            doc = if (linkRe.containsMatchIn(doc)) linkRe.replace(doc, "<style>\n$css\n</style>")
-                  else doc.replace("</head>", "<style>\n$css\n</style>\n</head>", ignoreCase = true)
+    fun combinedHtml(project: StudioProject): String {
+        val dir = project.dir
+        val index = File(dir, "index.html").takeIf { it.exists() }?.readText() ?: ""
+        val css = File(dir, "style.css").takeIf { it.exists() }?.readText() ?: ""
+        val js = File(dir, "script.js").takeIf { it.exists() }?.readText() ?: ""
+        return combineDocument(index, css, js)
+    }
+
+    companion object {
+        /**
+         * Pure export/preview combiner (unit-tested on the JVM in CI): local style.css
+         * and script.js are inlined; script tag attributes (e.g. type="text/babel") are
+         * preserved; external dependencies (CDN script/link URLs) are left untouched -
+         * they are NOT bundled, so exported files keep needing network for them.
+         */
+        fun combineDocument(index: String, css: String, js: String): String {
+            var doc = index
+            if (css.isNotBlank()) {
+                val linkRe = Regex("<link[^>]*href=[\"']style\\.css[\"'][^>]*>", RegexOption.IGNORE_CASE)
+                doc = if (linkRe.containsMatchIn(doc)) linkRe.replace(doc, "<style>\n$css\n</style>")
+                      else doc.replace("</head>", "<style>\n$css\n</style>\n</head>", ignoreCase = true)
+            }
+            if (js.isNotBlank()) {
+                val scriptRe = Regex("<script([^>]*)\\ssrc=[\"']script\\.js[\"']([^>]*)>\\s*</script>", RegexOption.IGNORE_CASE)
+                val inline = "<script$1$2>\n$js\n</script>"
+                doc = if (scriptRe.containsMatchIn(doc)) scriptRe.replace(doc, inline)
+                      else doc.replace("</body>", "<script>\n$js\n</script>\n</body>", ignoreCase = true)
+            }
+            return doc
         }
-        if (js.isNotBlank()) {
-            val scriptRe = Regex("<script([^>]*)\\ssrc=[\"']script\\.js[\"']([^>]*)>\\s*</script>", RegexOption.IGNORE_CASE)
-            doc = if (scriptRe.containsMatchIn(doc)) scriptRe.replace(doc, "<script$1$2>\n$js\n</script>")
-                  else if (doc.contains("</body>", ignoreCase = true))
-                      doc.replace("</body>", "<script>\n$js\n</script>\n</body>", ignoreCase = true)
-                  else doc + "\n<script>\n$js\n</script>"
-        }
-        if (!doc.contains("<html", ignoreCase = true)) {
-            doc = "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"></head><body>$doc</body></html>"
-        }
-        return doc
     }
 
     enum class Template(val label: String, val files: Map<String, String>) {
