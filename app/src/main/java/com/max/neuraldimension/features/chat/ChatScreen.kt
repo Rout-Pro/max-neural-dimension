@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
@@ -149,18 +150,28 @@ fun ChatScreen(vm: AppViewModel, onOpenSettings: () -> Unit) {
     // Stick-to-bottom (item 0 = newest, reverseLayout). scrollToItem is atomic:
     // animateScrollToItem could be cancelled mid-flight by retriggers or by the IME
     // closing, leaving the list stranded above the bottom (old bubbles clipping at
-    // the header with a gap above the input). Re-pin only when the view is already
-    // at the bottom, or when the user just sent a message - never yank someone
-    // reading older history. Re-key on imeBottom so a keyboard close re-pins a
-    // bottom-pinned list after the viewport grows.
+    // the header with a gap above the input). Position alone cannot distinguish
+    // that stranded state from a user reading history, so track actual drag
+    // gestures: re-pin on content or IME changes unless the user has dragged up
+    // and not returned. A message the user just sent always re-pins.
+    var userPulledUp by remember { mutableStateOf(false) }
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Stop || interaction is DragInteraction.Cancel) {
+                userPulledUp = !(listState.firstVisibleItemIndex == 0 &&
+                    listState.firstVisibleItemScrollOffset < 48)
+            }
+        }
+    }
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
     LaunchedEffect(scrollCount, scrollTail, incognito, imeBottom) {
         if (scrollCount == 0) return@LaunchedEffect
-        val atBottom = listState.firstVisibleItemIndex == 0 &&
-            listState.firstVisibleItemScrollOffset < 48
         val lastIsUser =
             (if (incognito) incognitoMessages else messages).lastOrNull()?.role == "user"
-        if (atBottom || lastIsUser) listState.scrollToItem(0)
+        if (!userPulledUp || lastIsUser) {
+            listState.scrollToItem(0)
+            userPulledUp = false
+        }
     }
 
     Column(Modifier.fillMaxSize().background(NdBlack).statusBarsPadding().imePadding()) {
