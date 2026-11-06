@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Mic
@@ -36,6 +37,7 @@ import com.max.neuraldimension.features.chat.AppViewModel
 import com.max.neuraldimension.features.chat.ChatScreen
 import com.max.neuraldimension.features.home.HomeScreen
 import com.max.neuraldimension.features.settings.SettingsScreen
+import com.max.neuraldimension.features.studio.StudioScreen
 import com.max.neuraldimension.features.tools.ToolsScreen
 import com.max.neuraldimension.features.voice.VoiceScreen
 
@@ -44,6 +46,7 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     CHAT("Chat", Icons.Default.Chat),
     VOICE("Voice", Icons.Default.Mic),
     TOOLS("Tools", Icons.Default.AutoAwesome),
+    STUDIO("Studio", Icons.Default.Code),
     SETTINGS("Settings", Icons.Default.Settings)
 }
 
@@ -100,6 +103,7 @@ class MainActivity : ComponentActivity() {
                             Tab.CHAT -> ChatScreen(vm, onOpenSettings = { tab = Tab.SETTINGS })
                             Tab.VOICE -> VoiceScreen(vm)
                             Tab.TOOLS -> ToolsScreen(vm)
+                            Tab.STUDIO -> StudioScreen()
                             Tab.SETTINGS -> SettingsScreen(vm)
                         }
                     }

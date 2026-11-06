@@ -838,6 +838,48 @@ if BACKEND_TEST:
     print('PHASE2-COVERAGE picker=' + ('ok' if PICKER['ok'] else 'MISS'))
     sys.stdout.flush()
 
+if want('studio'):
+    # === Phase 4: Web Studio - local project create/edit/run/console/export ===
+    # Fully on-device; zero provider calls.
+    dismiss_keyboard()
+    tap_nav('Studio', timeout=8)
+    time.sleep(3)
+    assert_true('studio: empty state', 'No projects yet' in dump())
+    if tap_text('New project name', timeout=8):
+        time.sleep(1)
+        type_text('StudioTest')
+        time.sleep(1)
+        tap_text('Create project', timeout=5)
+        time.sleep(3)
+    xml = dump()
+    assert_true('studio: project opened in editor', 'Hello from MAX Studio' in xml)
+    shot('p4-studio-editor')
+    # run preview
+    if tap_text('Run', timeout=6):
+        time.sleep(6)
+        xml = dump()
+        assert_true('studio: preview renders template heading', 'Hello from MAX Studio' in xml)
+        shot('p4-studio-preview')
+        if tap_text('Console (', timeout=6):
+            time.sleep(2)
+            xml = dump()
+            assert_true('studio: console captured script log', 'studio-ready' in xml)
+            shot('p4-studio-console')
+    # export single-file html
+    if tap_text('Export project as single HTML file', timeout=6):
+        time.sleep(3)
+        assert_true('studio: export notice shown', 'Exported to Downloads' in dump())
+        out = subprocess.run(['adb', 'shell', 'ls', '/storage/emulated/0/Download/NeuralDimension/'],
+                             capture_output=True, text=True).stdout
+        assert_true('studio: exported file exists in Downloads', 'StudioTest.html' in out)
+    # back, list, delete
+    tap_text('Back to projects', timeout=6)
+    time.sleep(2)
+    assert_true('studio: project listed', 'StudioTest' in dump())
+    if tap_text('Delete project', timeout=6):
+        time.sleep(2)
+        assert_true('studio: project deleted', 'StudioTest' not in dump())
+
 if want('voice3'):
     # === Phase 3 voice surface: honest recognition label + voice settings ===
     # (mic/STT untestable on emulator - no mic tap, no provider calls)
