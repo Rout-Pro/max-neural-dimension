@@ -74,9 +74,9 @@ def main():
     h_inst = hashlib.sha256(open(pulled, 'rb').read()).hexdigest()
     h_art = hashlib.sha256(open(apk, 'rb').read()).hexdigest()
     if h_inst != h_art:
-        gate_fail('installed bytes sha256 %s... != artifact %s... - stale or foreign binary under test'
-                  % (h_inst[:16], h_art[:16]))
-    print('CANDIDATE-GATE bytes ok: installed base.apk sha256 matches artifact (%s...)' % h_inst[:16])
+        gate_fail('installed bytes sha256 %s != artifact %s - stale or foreign binary under test'
+                  % (h_inst, h_art))
+    print('CANDIDATE-GATE bytes ok: installed base.apk sha256 matches artifact (%s)' % h_inst)
     sys.stdout.flush()
     signers = sorted(glob.glob(os.path.join(os.environ.get('ANDROID_HOME', '/nonexistent'),
                                             'build-tools', '*', 'apksigner')))
@@ -96,8 +96,8 @@ def main():
     c_inst, c_art = cert_sha256(pulled), cert_sha256(apk)
     if not c_inst or not c_art or c_inst != c_art:
         gate_fail('signing cert mismatch: installed=%s artifact=%s' % (c_inst, c_art))
-    print('CANDIDATE-GATE PASS: installed package is the expected candidate (version %s/%s, bytes identical, cert sha256 %s...)'
-          % (code, name, c_inst[:16]))
+    print('CANDIDATE-GATE PASS: installed package is the expected candidate (version %s/%s, bytes identical, cert sha256 %s)'
+          % (code, name, c_inst))
     sys.stdout.flush()
 
 main()

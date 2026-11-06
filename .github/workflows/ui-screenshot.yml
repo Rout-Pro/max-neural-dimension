@@ -77,6 +77,10 @@ jobs:
           "$APKSIGNER" verify --print-certs "$APK" | grep -i 'SHA-256' | sed 's/.*: //' | tr -d ' ' | tr 'A-F' 'a-f' | sort > /tmp/cert-new.txt
           "$APKSIGNER" verify --print-certs /tmp/delivered-2.0.1.apk | grep -i 'SHA-256' | sed 's/.*: //' | tr -d ' ' | tr 'A-F' 'a-f' | sort > /tmp/cert-old.txt
           if ! diff /tmp/cert-new.txt /tmp/cert-old.txt; then echo "::error::signing certificate differs from delivered v2.0.1"; exit 1; fi
+          # preserve exact identity for release review (run 42296709478 had only truncated values)
+          echo "artifact sha256: $(sha256sum "$APK" | awk '{print $1}')"
+          echo "artifact cert sha256: $(cat /tmp/cert-new.txt)"
+        
           echo "PASS release artifact: hook-free, HTTPS-only, debuggable=false, versionCode=$VC>3, same-signing as v2.0.1"
       - name: Enable KVM
         run: |
