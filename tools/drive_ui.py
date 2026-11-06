@@ -838,6 +838,19 @@ if BACKEND_TEST:
     print('PHASE2-COVERAGE picker=' + ('ok' if PICKER['ok'] else 'MISS'))
     sys.stdout.flush()
 
+if want('upgrade'):
+    # === Release gate: data seeded into delivered v2.0.1 must survive the in-place upgrade ===
+    # (workflow installed v2.0.1, seeded 'seed-task-v1', then adb install -r the new build)
+    tap_nav('Tools', timeout=12)
+    time.sleep(3)
+    xml = dump()
+    for _ in range(3):
+        if 'seed-task-v1' in xml:
+            break
+        swipe_up(); time.sleep(1.5)
+        xml = dump()
+    assert_true('upgrade: task seeded in v2.0.1 survived Room migration v1->current', 'seed-task-v1' in xml)
+
 if want('weather'):
     # === Phase 6c: Weather (real Open-Meteo network) + Daily briefing (local) ===
     # Network-dependent: failure may be runner networking, not the app.

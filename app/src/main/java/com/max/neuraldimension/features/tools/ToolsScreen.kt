@@ -281,8 +281,7 @@ fun ToolsScreen(vm: AppViewModel) {
                     }
                 )
                 TextButton(onClick = {
-                    val cents = exAmount.toDoubleOrNull()
-                        ?.let { kotlin.math.round(it * 100).toLong() }
+                    val cents = com.max.neuraldimension.domain.Money.parseRupeesToCents(exAmount)
                     if (cents != null && cents > 0) { vm.addExpense(exLabel, cents); exLabel = ""; exAmount = "" }
                 }) { Text("Save expense", color = NdLavender) }
             }

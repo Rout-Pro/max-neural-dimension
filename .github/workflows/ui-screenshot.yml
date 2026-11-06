@@ -59,7 +59,11 @@ jobs:
           disable-animations: true
           script: |
             mkdir -p shots
-            adb install app/build/outputs/apk/debug/NeuralDimension-2.0.apk
+            # Migration/update gate: seed the DELIVERED v2.0.1, then upgrade in place
+            curl -sL -o /tmp/old.apk https://github.com/Rout-Pro/max-neural-dimension/releases/download/v2.0.1/NeuralDimension-2.0.1.apk
+            adb install /tmp/old.apk
+            python3 tools/seed_upgrade.py
+            adb install -r app/build/outputs/apk/debug/NeuralDimension-2.0.apk
             python3 tools/drive_ui.py
       - name: Upload screenshots
         if: always()

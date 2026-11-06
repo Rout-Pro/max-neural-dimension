@@ -13,7 +13,7 @@ android {
         applicationId = "com.max.neuraldimension"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
+        versionCode = 4  // must exceed the delivered v2.0.1 (3) so upgrades install
         versionName = "2.0"
         // CI-only UI-test hook. The distributed APK (Build workflow) is compiled
         // without -PND_TEST_HOOK, so the hook is absent from what users install.
