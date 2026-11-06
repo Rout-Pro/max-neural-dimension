@@ -3,6 +3,7 @@ package com.max.neuraldimension.features.voice
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.os.Build
 import android.media.MediaPlayer
 import android.os.Bundle
 import android.os.SystemClock
@@ -45,6 +46,11 @@ class VoiceEngine(private val context: Context, private val scope: CoroutineScop
     var listener: Listener? = null
     var languageTag: String = "en-IN"
     var speechRate: Float = 1.0f
+    /** Selected TTS voice name; empty = system default for the language. */
+    var voiceName: String = ""
+    /** Resolved at each startListening: true when the on-device recognizer is in use. */
+    @Volatile var recognizerIsOnDevice: Boolean = false
+        private set
 
     private var tts: TextToSpeech? = null
     private var recognizer: SpeechRecognizer? = null
@@ -70,7 +76,32 @@ class VoiceEngine(private val context: Context, private val scope: CoroutineScop
         val t = tts ?: return
         val locale = Locale.forLanguageTag(languageTag)
         t.setLanguage(locale)
+        if (voiceName.isNotBlank()) {
+            runCatching { t.voices?.firstOrNull { it.name == voiceName }?.let { t.setVoice(it) } }
+        }
         t.setSpeechRate(speechRate)
+    }
+
+    /** Installed TTS voices for the current language (device + downloadable). */
+    fun availableVoiceNames(): List<String> {
+        val t = tts ?: return emptyList()
+        if (!ttsReady) return emptyList()
+        val lang = Locale.forLanguageTag(languageTag).language
+        return runCatching {
+            t.voices?.filter { it.locale.language == lang }?.map { it.name }?.sorted()
+        }.getOrNull() ?: emptyList()
+    }
+
+    /** Explicit on-device recognition (API 31+ per the Android SDK reference). */
+    fun onDeviceRecognitionAvailable(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            runCatching { SpeechRecognizer.isOnDeviceRecognitionAvailable(context) }.getOrDefault(false)
+
+    /** Honest label for the active/predicted recognition path - never claims offline. */
+    fun recognitionModeDescription(): String = when {
+        !recognitionAvailable() -> "not available on this device"
+        onDeviceRecognitionAvailable() -> "on-device recognizer"
+        else -> "device speech service (may use network)"
     }
 
     fun setRate(rate: Float) { speechRate = rate; tts?.setSpeechRate(rate) }
@@ -276,7 +307,13 @@ class VoiceEngine(private val context: Context, private val scope: CoroutineScop
         }
         scope.launch(Dispatchers.Main) {
             try {
-                val r = SpeechRecognizer.createSpeechRecognizer(context.applicationContext)
+                val onDevice = onDeviceRecognitionAvailable()
+                recognizerIsOnDevice = onDevice
+                val r = if (onDevice) {
+                    SpeechRecognizer.createOnDeviceSpeechRecognizer(context.applicationContext)
+                } else {
+                    SpeechRecognizer.createSpeechRecognizer(context.applicationContext)
+                }
                 recognizer = r
                 r.setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {

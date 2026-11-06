@@ -90,6 +90,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 RobotState.intensity = s.animIntensity
                 RobotState.reducedMotion = s.reducedMotion
                 voice.languageTag = s.language
+                voice.voiceName = s.voiceName
+                voice.applyVoice()
                 voice.setRate(s.speechRate)
             }
         }

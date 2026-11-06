@@ -2,6 +2,8 @@ package com.max.neuraldimension.features.voice
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings as AndroidSettings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -83,11 +85,12 @@ fun VoiceScreen(vm: AppViewModel) {
         while (true) { tick++; delay(500) }
     }
 
+    var micDenied by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) { continuous = true; vm.voice.startListening() }
-        else statusText = "Microphone permission is needed for live conversation"
+        if (granted) { micDenied = false; continuous = true; vm.voice.startListening() }
+        else { micDenied = true; statusText = "Microphone permission is needed for live conversation" }
     }
 
     DisposableEffect(Unit) {
@@ -156,6 +159,19 @@ fun VoiceScreen(vm: AppViewModel) {
             Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp).verticalScroll(rememberScrollState())
         ) {
             Text(statusText, color = NdLavender, fontSize = 14.sp)
+            Spacer(Modifier.height(4.dp))
+            // Honest recognition path label - never claims offline (may use network).
+            Text("Recognition: " + vm.voice.recognitionModeDescription(), color = NdMuted, fontSize = 11.sp)
+            if (micDenied) {
+                Spacer(Modifier.height(6.dp))
+                TextButton(onClick = {
+                    val i = android.content.Intent(
+                        AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", context.packageName, null)
+                    )
+                    context.startActivity(i)
+                }) { Text("Open app settings to allow the microphone", color = NdNeon, fontSize = 12.sp) }
+            }
             if (partial.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
                 Text(partial, color = NdMuted, fontSize = 13.sp)

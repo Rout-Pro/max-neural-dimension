@@ -27,6 +27,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -116,7 +117,25 @@ fun SettingsScreen(vm: AppViewModel) {
 
         Section("Voice") {
             PickerRow("Language", s.language, listOf("en-IN", "en-US", "hi-IN")) { idx ->
-                scope.launch { vm.settingsRepo.update { it.copy(language = listOf("en-IN", "en-US", "hi-IN")[idx]) } }
+                scope.launch { vm.settingsRepo.update { it.copy(language = listOf("en-IN", "en-US", "hi-IN")[idx], voiceName = "") } }
+            }
+            // Voices for the selected language, from the device TTS engine (male/female
+            // where the device exposes them). Loads async while the engine initializes.
+            val voiceNames by produceState(initialValue = emptyList<String>(), s.language) {
+                var tries = 0
+                while (tries < 20) {
+                    val v = vm.voice.availableVoiceNames()
+                    if (v.isNotEmpty()) { value = v; break }
+                    tries++
+                    kotlinx.coroutines.delay(500)
+                }
+            }
+            if (voiceNames.isNotEmpty()) {
+                val options = listOf("System default") + voiceNames
+                PickerRow("Voice", if (s.voiceName.isBlank()) "System default" else s.voiceName, options) { idx ->
+                    val picked = if (idx == 0) "" else voiceNames[idx - 1]
+                    scope.launch { vm.settingsRepo.update { it.copy(voiceName = picked) } }
+                }
             }
             Text("Speech rate: %.1fx".format(s.speechRate), color = NdSilver, fontSize = 13.sp)
             Slider(

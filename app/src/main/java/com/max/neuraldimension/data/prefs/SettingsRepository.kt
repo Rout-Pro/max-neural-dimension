@@ -29,6 +29,8 @@ data class MaxSettings(
     val customPersonality: String = "",
     val speechRate: Float = 1.0f,
     val language: String = "en-IN",
+    /** TTS voice name from the device engine; empty = system default for the language. */
+    val voiceName: String = "",
     val animIntensity: Float = 1.0f,
     val reducedMotion: Boolean = false,
     val memories: Set<String> = emptySet(),
@@ -48,6 +50,7 @@ class SettingsRepository(private val context: Context) {
         val CUSTOM_PERSONALITY = stringPreferencesKey("custom_personality")
         val SPEECH_RATE = floatPreferencesKey("speech_rate")
         val LANGUAGE = stringPreferencesKey("language")
+        val VOICE_NAME = stringPreferencesKey("voice_name")
         val ANIM_INTENSITY = floatPreferencesKey("anim_intensity")
         val REDUCED_MOTION = booleanPreferencesKey("reduced_motion")
         val MEMORIES = stringSetPreferencesKey("memories")
@@ -68,6 +71,7 @@ class SettingsRepository(private val context: Context) {
             p[K.CUSTOM_PERSONALITY] = n.customPersonality
             p[K.SPEECH_RATE] = n.speechRate
             p[K.LANGUAGE] = n.language
+            p[K.VOICE_NAME] = n.voiceName
             p[K.ANIM_INTENSITY] = n.animIntensity
             p[K.REDUCED_MOTION] = n.reducedMotion
             p[K.MEMORIES] = n.memories
@@ -85,6 +89,7 @@ class SettingsRepository(private val context: Context) {
         customPersonality = p[K.CUSTOM_PERSONALITY] ?: "",
         speechRate = p[K.SPEECH_RATE] ?: 1.0f,
         language = p[K.LANGUAGE] ?: "en-IN",
+        voiceName = p[K.VOICE_NAME] ?: "",
         animIntensity = p[K.ANIM_INTENSITY] ?: 1.0f,
         reducedMotion = p[K.REDUCED_MOTION] ?: false,
         memories = p[K.MEMORIES] ?: emptySet(),
