@@ -420,6 +420,30 @@ if want_run('T17'):
   check('T17 no playback/envelope asserts after stop',
         'audible playback path' not in r['out'] and 'mouthAmp driven' not in r['out'], '')
 
+# ---- T18: voice-ma happy path - mute UX + HAPPY logging, all PASS, rc 0 ----
+if want_run('T18'):
+  r = run_scenario('T18-voice-ma', 'voice-ma')
+  need = ['PASS voice-ma: mute microphone control present',
+          'PASS voice-ma: muted state shown',
+          'PASS voice-ma: muted mic tap shows unmute hint',
+          'PASS voice-ma: no relisten within 3s after mute',
+          'PASS voice-ma: unmute restores mute control state',
+          'PASS voice-ma: test habit listed',
+          'PASS voice-ma: HAPPY mode logged on habit completion',
+          'PASS voice-ma: streak became 1',
+          'PASS voice-ma: already-done re-mark does not re-pulse HAPPY']
+  missing = [x for x in need if x not in r['out']]
+  check('T18 all voice-ma asserts PASS', not missing, missing)
+  check('T18 rc=0', r['rc'] == 0, 'rc=%d' % r['rc'])
+  check('T18 CURIOUS-open NOTE present', 'NOTE voice-ma: CURIOUS runtime claim open' in r['out'], '')
+
+# ---- T19 mutant: no state logging -> HAPPY assert must FAIL honestly ----
+if want_run('T19'):
+  r = run_scenario('T19-no-statelog', 'voice-ma', extra_env={'ND_FAKE_NO_STATELOG': '1'})
+  check('T19 HAPPY assert FAILs when no MAX_STATE line',
+        'FAIL voice-ma: HAPPY mode logged on habit completion' in r['out'],
+        [l for l in r['out'].splitlines() if 'voice-ma' in l][:10])
+
 ok = all(c['ok'] for c in results['checks'])
 print('ITEST-RESULT: %s (%d/%d checks passed)' % ('ALL-PASS' if ok else 'FAILURES',
       sum(1 for c in results['checks'] if c['ok']), len(results['checks'])), flush=True)

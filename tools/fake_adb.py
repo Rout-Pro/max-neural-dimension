@@ -42,6 +42,7 @@ def default_state():
         'export_notice': False, 'fields': {}, 'scroll': {}, 'launch_count': 0,
         'back_exits': 0, 'uninstalls': 0, 'installs': 0, 'force_stops': 0,
         'speaking': False,
+        'muted': False, 'listening': False, 'voice_status': 'Tap the mic to talk with MAX',
     }
 
 def save(s):
@@ -122,8 +123,11 @@ def stack(s, scr):
         add('LIVE WITH', dy=100)
         if s.get('speaking'):
             add('SPEAKING', dy=30)
+        add(s.get('voice_status') or 'Tap the mic to talk with MAX', dy=60)
         add('Recognition: on-device recognizer', dy=85)
         add('Test MAX voice', dy=70)
+        n.append(Node(desc=('Stop listening' if s.get('listening') else 'Start listening'), y=1210, x=320, w=90, h=90))
+        n.append(Node(desc=('Unmute microphone' if s.get('muted') else 'Mute microphone'), y=1210, x=520, w=70, h=70))
     elif scr == 'tools':
         # Real card order (ToolsScreen.kt): briefing, Tasks, Notes, Reminders,
         # Habits, Expenses, Weather, Flashlight, Device, Open apps, Controls.
@@ -362,6 +366,22 @@ def do_tap(s, px, py):
                          else 'Request failed')
                 s['conversations'][s['current_conv']].append({'role': 'assistant', 'text': reply})
     elif scr == 'voice':
+        if d == 'Mute microphone':
+            s['muted'] = True
+            s['listening'] = False
+            s['voice_status'] = 'Microphone muted'
+            return
+        if d == 'Unmute microphone':
+            s['muted'] = False
+            s['voice_status'] = 'Microphone on - tap the mic to talk'
+            return
+        if d == 'Start listening':
+            if s.get('muted'):
+                s['voice_status'] = 'Microphone muted - unmute to talk'
+            else:
+                s['listening'] = True
+                s['voice_status'] = 'Listening...'
+            return
         if t == 'Test MAX voice':
             s['speaking'] = True
             lf = sp('logcat.txt')
@@ -392,6 +412,10 @@ def do_tap(s, px, py):
             if v:
                 s['habits'].append({'name': v, 'streak': 0}); s['fields']['habit'] = ''
         elif t == 'Mark today':
+            if s['habits'] and s['habits'][0].get('streak', 0) == 0 and os.environ.get('ND_FAKE_NO_STATELOG') != '1':
+                lf = sp('logcat.txt')
+                os.makedirs(os.path.dirname(lf), exist_ok=True)
+                open(lf, 'a').write('I/MAX_STATE( 999): mode=HAPPY\n')
             if s['habits']:
                 s['habits'][0]['streak'] = 1
         elif t == 'Save expense':

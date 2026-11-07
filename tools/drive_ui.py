@@ -1467,6 +1467,73 @@ if want('voice3'):
                 ('Voice' in xml))
     shot('p3-voice-settings')
 
+if want('voice-ma'):
+    # === M-A runtime validation: mic mute UX + event-grounded HAPPY ===
+    # The unit gate (VoiceFlowTest truth table) is reported separately; this is
+    # runtime UI/log evidence. -noaudio emulator has NO audio input: the rms bar
+    # and the negative listening window are WIRING-ONLY, not VAD/STT proof. The
+    # CURIOUS runtime claim is intentionally left open: policy requires an EMPTY
+    # backend for a chat question, and an unconfigured backend short-circuits to
+    # CONFUSED before the CURIOUS cue - scope not widened.
+    dismiss_keyboard()
+    adb('logcat', '-c')
+    tap_nav('Voice', timeout=8)
+    time.sleep(3)
+    xml = dump()
+    assert_true('voice-ma: mute microphone control present', 'Mute microphone' in xml)
+    adb('shell', 'pm', 'grant', PKG, 'android.permission.RECORD_AUDIO')
+    if assert_true('voice-ma: mute control tappable', bool(tap_text('Mute microphone', timeout=4))):
+        time.sleep(1)
+        xml = dump()
+        assert_true('voice-ma: muted state shown (status + Unmute desc flip)',
+                    'Microphone muted' in xml and 'Unmute microphone' in xml)
+        shot('ma-muted')
+        if tap_text('Start listening', timeout=4):
+            time.sleep(1)
+            assert_true('voice-ma: muted mic tap shows unmute hint', 'unmute to talk' in dump())
+        saw = False
+        t0 = time.time()
+        while time.time() - t0 < 3:
+            if 'Listening...' in dump():
+                saw = True
+                break
+            time.sleep(0.5)
+        assert_true('voice-ma: no relisten within 3s after mute (window-only proof)', not saw)
+        tap_text('Unmute microphone', timeout=4)
+        time.sleep(1)
+        xml = dump()
+        assert_true('voice-ma: unmute restores mute control state', 'Mute microphone' in xml)
+        shot('ma-unmuted')
+    # HAPPY on a real completion event (habit check-in), observed via MAX_STATE log
+    adb('logcat', '-c')
+    tap_nav('Tools', timeout=8)
+    time.sleep(3)
+    tools_top()
+    ensure_visible('Add a habit...')
+    if tap_text('Add a habit...', timeout=8):
+        time.sleep(1)
+        type_text('ma-happy-habit')
+        time.sleep(1)
+        tap_text('Save habit', timeout=5)
+        time.sleep(2)
+    assert_true('voice-ma: test habit listed', 'ma-happy-habit' in dump())
+    dismiss_keyboard()
+    ensure_visible('Mark today')
+    if assert_true('voice-ma: Mark today control tappable', bool(tap_text('Mark today', timeout=6))):
+        time.sleep(2)
+        r = adb('logcat', '-d', '-s', 'MAX_STATE:I')
+        assert_true('voice-ma: HAPPY mode logged on habit completion', 'mode=HAPPY' in (r.stdout or ''))
+        assert_true('voice-ma: streak became 1 (completion observed in UI)', 'streak 1' in dump())
+        adb('logcat', '-c')
+        if tap_text('Mark today', timeout=4):
+            time.sleep(2)
+            r = adb('logcat', '-d', '-s', 'MAX_STATE:I')
+            assert_true('voice-ma: already-done re-mark does not re-pulse HAPPY', 'mode=HAPPY' not in (r.stdout or ''))
+        else:
+            print('NOTE voice-ma: Mark today not re-tappable; re-mark guard checked by unit/code level only'); sys.stdout.flush()
+    shot('ma-happy-tools')
+    print('NOTE voice-ma: CURIOUS runtime claim open (empty-backend policy); rms bar wiring-only under -noaudio; STT/barge-in/audibility limitations unchanged'); sys.stdout.flush()
+
 if want('tail'):
 
     # Voice tab
