@@ -1112,11 +1112,39 @@ if want('remind'):
     xml = dump()
     assert_true('remind: reminder listed', 'nd-test-reminder' in xml)
     shot('p6-reminders')
-    # observed effect: wait for WorkManager to fire, then check posted notifications
-    time.sleep(100)
-    out = subprocess.run(['adb', 'shell', 'dumpsys', 'notification'], capture_output=True, text=True).stdout
-    assert_true('remind: system notification posted (observed effect)',
-                'nd-test-reminder' in out or 'MAX Reminder' in out)
+    # observed effect: bounded watch for the WorkManager-fired notification.
+    # Evidence is printed UNCONDITIONALLY: notification-record blocks for our
+    # package (pkg/channel/id/title) plus a filtered logcat tail (exact post
+    # time), so a PASS carries delivery identity and a FAIL carries system
+    # state. No record inside a finite emulator window does not by itself
+    # prove absence of the effect (permission/channel/OS/scheduling state) -
+    # the printed evidence is what distinguishes those.
+    posted = False
+    out = ''
+    for _ in range(24):  # 24 x 15s = 360s bounded watch
+        time.sleep(15)
+        out = subprocess.run(['adb', 'shell', 'dumpsys', 'notification'],
+                             capture_output=True, text=True).stdout
+        if 'nd-test-reminder' in out or 'MAX Reminder' in out:
+            posted = True
+            break
+    block = []
+    printed = 0
+    for line in out.splitlines() + ['NotificationRecord(']:
+        if 'NotificationRecord' in line:
+            if block and any(('pkg=' + PKG) in b or 'MAX Reminder' in b for b in block):
+                for b in block[:20]:
+                    if printed < 60:
+                        print('NOTIFY-EVIDENCE ' + b.strip())
+                        printed += 1
+            block = [line]
+        elif block:
+            block.append(line)
+    log = subprocess.run(['adb', 'logcat', '-d', '-s', 'NotificationManager:*', 'ReminderWorker:*'],
+                         capture_output=True, text=True).stdout
+    for line in log.splitlines()[-30:]:
+        print('NOTIFY-LOGCAT ' + line)
+    assert_true('remind: system notification posted (observed effect)', posted)
     # cleanup: cancel the reminder entry
     if tap_text('Cancel', timeout=5):
         time.sleep(2)

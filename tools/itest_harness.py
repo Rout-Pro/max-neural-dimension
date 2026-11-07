@@ -138,6 +138,7 @@ T1_REQUIRED = [
     'PASS habits: expense listed',
     'PASS habits: total updated (observed state change)',
     'PASS remind: note listed',
+    'NOTIFY-EVIDENCE NotificationRecord pkg=com.max.neuraldimension',
     'PASS remind: reminder listed',
     'PASS remind: system notification posted (observed effect)',
     'PASS device: battery shown',
@@ -364,6 +365,17 @@ if want_run('T13'):
         os.path.exists(os.path.join(r['dir'], 'shots', 'candidate-gate-fail.png')), '')
   check('T13 no feature section ever ran',
         'expect app-text' not in r['out'] and 'habits:' not in r['out'], '')
+
+# ---- T14: notification capture path - bounded watch + unconditional evidence ----
+if want_run('T14'):
+  r = run_scenario('T14-notify-evidence', 'remind')
+  check('T14 rc=0', r['rc'] == 0, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
+  check('T14 notification assert PASSes via bounded watch',
+        'PASS remind: system notification posted (observed effect)' in r['out'], '')
+  check('T14 unconditional NOTIFY-EVIDENCE record printed with exact pkg/title',
+        'NOTIFY-EVIDENCE NotificationRecord pkg=com.max.neuraldimension' in r['out']
+        and 'MAX Reminder: nd-test-reminder' in r['out'],
+        [l for l in r['out'].splitlines() if 'NOTIFY' in l][:5])
 
 ok = all(c['ok'] for c in results['checks'])
 print('ITEST-RESULT: %s (%d/%d checks passed)' % ('ALL-PASS' if ok else 'FAILURES',
