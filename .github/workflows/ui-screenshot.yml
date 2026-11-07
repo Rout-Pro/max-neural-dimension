@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       sections:
-        description: 'Comma list: all,migration,core,regen,rename,edit,attachments,conv2,incognito,delete,errors,upgrade,weather,habits,remind,device,studio,voice3,tail (smoke gate always runs)'
+        description: 'Comma list: all,migration,core,regen,rename,edit,attachments,conv2,incognito,delete,errors,upgrade,weather,habits,remind,device,studio,voice3,voice-speak,tail (smoke gate always runs)'
         required: false
         default: 'all'
       real_backend_url:

@@ -393,6 +393,33 @@ if want_run('T15'):
         'PASS chat-real: real backend reply rendered (PONG)' in r['out'],
         [l for l in r['out'].splitlines() if 'chat-real' in l][:4])
 
+# ---- T16: voice-speak happy path - synth + audible playback + envelope asserts ----
+if want_run('T16'):
+  r = run_scenario('T16-voice-speak', 'voice-speak')
+  check('T16 control + synth + SPEAKING + playback + envelope asserts PASS',
+        'PASS voice-speak: Test MAX voice control present' in r['out']
+        and 'PASS voice-speak: TTS synthesized a real WAV' in r['out']
+        and 'PASS voice-speak: SPEAKING state visible during drive' in r['out']
+        and 'PASS voice-speak: audible playback path started' in r['out']
+        and 'PASS voice-speak: mouthAmp driven by real envelope' in r['out'],
+        [l for l in r['out'].splitlines() if 'voice-speak' in l][:8])
+  check('T16 static fake pixels make mouth-band assert FAIL honestly (non-vacuous)',
+        'FAIL voice-speak: mouth' in r['out'],
+        [l for l in r['out'].splitlines() if 'voice-speak' in l])
+  check('T16 no fallback NOTE on playback path',
+        'fallback envelope animation' not in r['out'], '')
+
+# ---- T17: TTS engine absent - synth assert FAILs, section stops, no cascade ----
+if want_run('T17'):
+  r = run_scenario('T17-no-tts', 'voice-speak', extra_env={'ND_FAKE_NO_TTS': '1'})
+  check('T17 synth FAIL honest',
+        'FAIL voice-speak: TTS synthesized a real WAV' in r['out'],
+        [l for l in r['out'].splitlines() if 'voice-speak' in l][:6])
+  check('T17 stop NOTE printed',
+        'NOTE voice-speak: no synth within 40s' in r['out'], '')
+  check('T17 no playback/envelope asserts after stop',
+        'audible playback path' not in r['out'] and 'mouthAmp driven' not in r['out'], '')
+
 ok = all(c['ok'] for c in results['checks'])
 print('ITEST-RESULT: %s (%d/%d checks passed)' % ('ALL-PASS' if ok else 'FAILURES',
       sum(1 for c in results['checks'] if c['ok']), len(results['checks'])), flush=True)

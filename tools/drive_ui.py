@@ -1289,6 +1289,160 @@ if want('studio'):
     assert_true('studio: both projects deleted (after creation proven)',
                 _studio_listed and 'StudioTest' not in xml and 'ReactExp' not in xml)
 
+
+# ---- voice-speak helpers: minimal stdlib PNG decode for pixel-diff evidence ----
+_PNG_CACHE = {}
+
+def _png_rows(path, ymax_frac=1.0):
+    """Decode an 8-bit non-interlaced RGB/RGBA PNG to grayscale rows (stdlib only).
+
+    Stops after ymax_frac of the rows (mouth band is in the upper robot area).
+    Returns (w, h, rows) or None on anything unexpected - callers FAIL honestly."""
+    key = (path, ymax_frac)
+    if key in _PNG_CACHE:
+        return _PNG_CACHE[key]
+    import struct, zlib
+    out = None
+    try:
+        d = open(path, 'rb').read()
+        if d[:8] == b'\x89PNG\r\n\x1a\n':
+            pos = 8; w = h = ct = None; idat = b''
+            while pos + 8 <= len(d):
+                ln = struct.unpack('>I', d[pos:pos+4])[0]
+                typ = d[pos+4:pos+8]; chunk = d[pos+8:pos+8+ln]
+                if typ == b'IHDR':
+                    w, h = struct.unpack('>II', chunk[:8])
+                    bd, ct, inter = chunk[8], chunk[9], chunk[12]
+                    if bd != 8 or inter != 0 or ct not in (2, 6):
+                        w = None; break
+                elif typ == b'IDAT':
+                    idat += chunk
+                elif typ == b'IEND':
+                    break
+                pos += 12 + ln
+            if w is not None:
+                ch = 4 if ct == 6 else 3
+                raw = zlib.decompress(idat)
+                stride = w * ch
+                ymax = min(h, int(h * ymax_frac) + 1)
+                rows = []; prev = bytearray(stride); off = 0
+                for y in range(ymax):
+                    filt = raw[off]; line = bytearray(raw[off+1:off+1+stride]); off += 1 + stride
+                    if filt == 1:
+                        for i in range(ch, stride): line[i] = (line[i] + line[i-ch]) & 0xFF
+                    elif filt == 2:
+                        for i in range(stride): line[i] = (line[i] + prev[i]) & 0xFF
+                    elif filt == 3:
+                        for i in range(stride):
+                            line[i] = (line[i] + ((line[i-ch] if i >= ch else 0) + prev[i]) // 2) & 0xFF
+                    elif filt == 4:
+                        for i in range(stride):
+                            a = line[i-ch] if i >= ch else 0; b = prev[i]; c = prev[i-ch] if i >= ch else 0
+                            p = a + b - c
+                            pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                            pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                            line[i] = (line[i] + pr) & 0xFF
+                    prev = line
+                    g = [0] * w
+                    for x in range(w):
+                        i = x * ch
+                        g[x] = (line[i] * 299 + line[i+1] * 587 + line[i+2] * 114) // 1000
+                    rows.append(g)
+                out = (w, h, rows)
+    except Exception:
+        out = None
+    _PNG_CACHE[key] = out
+    return out
+
+def _band_diff(pa, pb, band):
+    """Mean abs grayscale diff inside a fractional (x0,x1,y0,y1) band; None if not computable."""
+    x0f, x1f, y0f, y1f = band
+    A = _png_rows(pa, y1f); B = _png_rows(pb, y1f)
+    if not A or not B:
+        return None
+    (w, h, ra), (w2, h2, rb) = A, B
+    if (w, h) != (w2, h2):
+        return None
+    x0, x1 = int(w * x0f), min(int(w * x1f), w)
+    y0, y1 = int(h * y0f), min(int(h * y1f), len(ra), len(rb))
+    if x1 <= x0 or y1 <= y0:
+        return None
+    tot = cnt = 0
+    for y in range(y0, y1):
+        ga, gb = ra[y], rb[y]
+        for x in range(x0, x1):
+            tot += abs(ga[x] - gb[x]); cnt += 1
+    return (tot / cnt) if cnt else None
+
+if want('voice-speak'):
+    # === voice-speak: real TTS synthesis + amplitude-envelope lip sync (V1) ===
+    # No provider, no backend: 'Test MAX voice' speaks a fixed sentence locally.
+    # Evidence: MAX_VOICE logcat (synth bytes/windows; then audible playback OR
+    # the honest -noaudio fallback), SPEAKING UI state, mouth-band pixel movement
+    # vs a 2-frame idle baseline. Fallback envelope animation is reported as such;
+    # it is NOT audible playback proof.
+    dismiss_keyboard()
+    tap_nav('Voice', timeout=8)
+    time.sleep(3)
+    xml = dump()
+    assert_true('voice-speak: voice screen rendered (recognition label)', 'Recognition:' in xml)
+    have_btn = 'Test MAX voice' in xml
+    assert_true('voice-speak: Test MAX voice control present', have_btn)
+    if have_btn:
+        adb('logcat', '-c')
+        shot('vs-idle-0')
+        time.sleep(1.2)
+        shot('vs-idle-1')
+        tap_text('Test MAX voice', timeout=4)
+        speaking_seen = False
+        synth = None
+        t0 = time.time()
+        while time.time() - t0 < 40:
+            time.sleep(1.5)
+            r = adb('logcat', '-d', '-s', 'MAX_VOICE:I')
+            if not speaking_seen:
+                if 'SPEAKING' in dump():
+                    speaking_seen = True
+            synth = re.search(r'synth done bytes=(\d+) windows=(\d+) windowMs=(\d+)', r.stdout or '')
+            if synth:
+                break
+        ok = synth is not None and int(synth.group(1)) > 100 and int(synth.group(2)) > 0
+        if not assert_true('voice-speak: TTS synthesized a real WAV (bytes>100 windows>0)', ok):
+            print('NOTE voice-speak: no synth within 40s - TTS engine absent or environment blocked; section stops here'); sys.stdout.flush()
+        else:
+            assert_true('voice-speak: SPEAKING state visible during drive', speaking_seen)
+            win_ms = int(synth.group(2)) * int(synth.group(3))
+            nshots = max(3, min(6, win_ms // 450))
+            for i in range(nshots):
+                shot('vs-speak-%d' % i)
+                time.sleep(0.45)
+            r = adb('logcat', '-d', '-s', 'MAX_VOICE:I')
+            log = r.stdout or ''
+            with open('shots/voice-speak-logcat.txt', 'w') as f:
+                f.write(log)
+            pb = re.search(r'playback start durMs=(\d+)', log)
+            if pb:
+                assert_true('voice-speak: audible playback path started (durMs>0)', int(pb.group(1)) > 0)
+                amps = {a for a in re.findall(r'amp=([\d.]+)', log) if float(a) > 0.05}
+                assert_true('voice-speak: mouthAmp driven by real envelope (>=2 distinct non-zero amps)', len(amps) >= 2)
+            else:
+                print('NOTE voice-speak: path = fallback envelope animation (no audio HAL) - NOT audible playback proof'); sys.stdout.flush()
+                assert_true('voice-speak: fallback path honest (synth done, no playback claim)', 'playback start' not in log)
+            band = (0.38, 0.62, 0.28, 0.45)
+            base = _band_diff('shots/vs-idle-0.png', 'shots/vs-idle-1.png', band)
+            best = None
+            for i in range(nshots):
+                dd = _band_diff('shots/vs-idle-0.png', 'shots/vs-speak-%d.png' % i, band)
+                if dd is not None:
+                    best = dd if best is None else max(best, dd)
+            if base is None or best is None:
+                assert_true('voice-speak: mouth-band pixel comparison computable', False)
+            else:
+                print('NOTE voice-speak: mouth-band idle-base=%.2f speech-best=%.2f' % (base, best)); sys.stdout.flush()
+                assert_true('voice-speak: mouth band moves during drive (>3x idle baseline)',
+                            best > max(3.0 * base, 2.0))
+            assert_true('voice-speak: app still on Voice screen after drive', 'Recognition:' in dump())
+
 if want('voice3'):
     # === Phase 3 voice surface: honest recognition label + voice settings ===
     # (mic/STT untestable on emulator - no mic tap, no provider calls)

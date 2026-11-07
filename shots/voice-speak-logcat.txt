@@ -1,0 +1,7 @@
+I/MAX_VOICE( 999): synth start len=87 t=1000
+I/MAX_VOICE( 999): synth done bytes=88244 windows=74 windowMs=50 t=2400
+I/MAX_VOICE( 999): playback start durMs=3680 t=2500
+I/MAX_VOICE( 999): play posMs=210 amp=0.42 t=2710
+I/MAX_VOICE( 999): play posMs=420 amp=0.87 t=2920
+I/MAX_VOICE( 999): play posMs=630 amp=0.15 t=3130
+I/MAX_VOICE( 999): playback end t=6300

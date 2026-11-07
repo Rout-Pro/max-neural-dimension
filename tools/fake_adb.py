@@ -41,6 +41,7 @@ def default_state():
         'weather': False, 'briefing': False, 'notifications': [],
         'export_notice': False, 'fields': {}, 'scroll': {}, 'launch_count': 0,
         'back_exits': 0, 'uninstalls': 0, 'installs': 0, 'force_stops': 0,
+        'speaking': False,
     }
 
 def save(s):
@@ -119,7 +120,10 @@ def stack(s, scr):
             n.append(Node(desc='Send', y=y - 90, x=1000, w=70, h=70))
     elif scr == 'voice':
         add('LIVE WITH', dy=100)
+        if s.get('speaking'):
+            add('SPEAKING', dy=30)
         add('Recognition: on-device recognizer', dy=85)
+        add('Test MAX voice', dy=70)
     elif scr == 'tools':
         # Real card order (ToolsScreen.kt): briefing, Tasks, Notes, Reminders,
         # Habits, Expenses, Weather, Flashlight, Device, Open apps, Controls.
@@ -357,6 +361,22 @@ def do_tap(s, px, py):
                          else 'Secure backend is not connected yet' if not s['settings']['backendUrl']
                          else 'Request failed')
                 s['conversations'][s['current_conv']].append({'role': 'assistant', 'text': reply})
+    elif scr == 'voice':
+        if t == 'Test MAX voice':
+            s['speaking'] = True
+            lf = sp('logcat.txt')
+            os.makedirs(os.path.dirname(lf), exist_ok=True)
+            if os.environ.get('ND_FAKE_NO_TTS') == '1':
+                open(lf, 'a').write('I/MAX_VOICE( 999): synth start len=87 t=1000\n')
+            else:
+                open(lf, 'a').write(
+                    'I/MAX_VOICE( 999): synth start len=87 t=1000\n'
+                    'I/MAX_VOICE( 999): synth done bytes=88244 windows=74 windowMs=50 t=2400\n'
+                    'I/MAX_VOICE( 999): playback start durMs=3680 t=2500\n'
+                    'I/MAX_VOICE( 999): play posMs=210 amp=0.42 t=2710\n'
+                    'I/MAX_VOICE( 999): play posMs=420 amp=0.87 t=2920\n'
+                    'I/MAX_VOICE( 999): play posMs=630 amp=0.15 t=3130\n'
+                    'I/MAX_VOICE( 999): playback end t=6300\n')
     elif scr == 'tools':
         if t == 'Add':
             v = s['fields'].get('task', '')
@@ -650,6 +670,14 @@ def main():
         if a[0] in ('settings', 'screenrecord', 'mkdir'):
             return 0
     if cmd == 'logcat':
+        lf = sp('logcat.txt')
+        args = sys.argv[2:]
+        if '-c' in args:
+            os.makedirs(os.path.dirname(lf), exist_ok=True)
+            open(lf, 'w').close()
+            return 0
+        if os.path.exists(lf):
+            sys.stdout.write(open(lf).read())
         return 0
     if cmd == 'uninstall':
         save(default_state())
