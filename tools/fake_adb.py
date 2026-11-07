@@ -16,7 +16,18 @@ import json, os, sys, base64, shutil
 ST = os.environ.get('ND_FAKE_STATE', '/tmp/nd-fake-state')
 PKG = 'com.max.neuraldimension'
 LAUNCHER_PKG = 'com.google.android.apps.nexuslauncher'
-PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==')
+def _make_png(w=480, h=800):
+    # Valid nontrivial PNG so the driver's artifact-provenance gate (>=240px)
+    # exercises its PASS path locally; content is a static dark frame.
+    import zlib as _z, struct as _st
+    raw = b''.join(b'\x00' + b'\x10\x0c\x1e\xff' * w for _ in range(h))
+    def chunk(t, d):
+        return _st.pack('>I', len(d)) + t + d + _st.pack('>I', _z.crc32(t + d) & 0xffffffff)
+    ihdr = _st.pack('>IIBBBBB', w, h, 8, 6, 0, 0, 0)
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', ihdr)
+            + chunk(b'IDAT', _z.compress(raw, 1)) + chunk(b'IEND', b''))
+
+PNG = _make_png()
 VIEW_TOP, VIEW_BOTTOM = 140, 2050   # content viewport; nav bar sits at 2100
 IME_TOP = 1150   # open keyboard covers ~y1150-2400 (real ~y1200+, run 42267432732)
 

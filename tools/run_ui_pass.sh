@@ -6,6 +6,10 @@
 # there (proven run 42225165314). Real bash parses this file directly.
 set -euo pipefail
 
+# Never let checked-in or leftover local fixtures shadow device evidence:
+# the output directory starts empty on every run (run 42333479189 uploaded
+# 1x1 placeholders when the job died before driving).
+rm -rf shots
 mkdir -p shots
 
 # chat-real mode: verify the live backend accepts the app token BEFORE any

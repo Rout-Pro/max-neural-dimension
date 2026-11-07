@@ -1,4 +1,4 @@
-import os, re, subprocess, sys, time
+import os, re, struct, subprocess, sys, time
 
 BACKEND_URL = os.environ.get('ND_TEST_BACKEND_URL', '').strip()
 APP_TOKEN = os.environ.get('ND_TEST_APP_TOKEN', '').strip()
@@ -14,9 +14,21 @@ def adb(*args):
     return subprocess.run(['adb'] + list(args), capture_output=True, text=True)
 
 def shot(name):
-    with open('shots/%s.png' % name, 'wb') as f:
+    path = 'shots/%s.png' % name
+    with open(path, 'wb') as f:
         subprocess.run(['adb', 'exec-out', 'screencap', '-p'], stdout=f)
     print('shot', name); sys.stdout.flush()
+    # Provenance gate: a real device frame is never a tiny placeholder. A
+    # checked-in/local fixture must fail loudly here instead of uploading as
+    # device evidence (run 42333479189).
+    try:
+        with open(path, 'rb') as f:
+            d = f.read(26)
+        w, h = struct.unpack('>II', d[16:24]) if d[:8] == b'\x89PNG\r\n\x1a\n' else (0, 0)
+    except Exception:
+        w = h = 0
+    if w < 240 or h < 240:
+        assert_true('artifact provenance: shot %s is a real device frame (got %sx%s)' % (name, w, h), False)
 
 def dump(path='/tmp/ui.xml'):
     for _ in range(3):
