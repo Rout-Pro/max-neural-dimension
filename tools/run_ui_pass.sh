@@ -37,9 +37,15 @@ if [ -n "${ND_REAL_URL:-}" ]; then
 fi
 
 # Migration/update gate: seed the DELIVERED v2.0.1, then upgrade in place.
-curl -sL -o /tmp/old.apk https://github.com/Rout-Pro/max-neural-dimension/releases/download/v2.0.1/NeuralDimension-2.0.1.apk
-adb install /tmp/old.apk
-python3 tools/seed_upgrade.py
+# ND_SEED=0 = candidate-only fresh install: NO upgrade/preservation claim
+# attaches to such a run; used for isolated control checks (main-approved).
+if [ "${ND_SEED:-1}" = "1" ]; then
+  curl -sL -o /tmp/old.apk https://github.com/Rout-Pro/max-neural-dimension/releases/download/v2.0.1/NeuralDimension-2.0.1.apk
+  adb install /tmp/old.apk
+  python3 tools/seed_upgrade.py
+else
+  echo 'ND_SEED=0: candidate-only fresh install - upgrade preservation NOT proven by this run'
+fi
 
 if [ "${BUILD_TYPE:-debug}" = "release" ]; then
   APK=app/build/outputs/apk/release/NeuralDimension-release.apk

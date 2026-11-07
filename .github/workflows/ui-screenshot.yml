@@ -18,6 +18,12 @@ on:
         type: choice
         options: [debug, release]
         default: 'debug'
+      seed:
+        description: '1 = seed delivered v2.0.1 + upgrade in place (default); 0 = candidate-only fresh install (NO upgrade/preservation claim)'
+        required: false
+        type: choice
+        options: ['1', '0']
+        default: '1'
 
 jobs:
   ui:
@@ -108,6 +114,7 @@ jobs:
           ND_REAL_URL: ${{ inputs.real_backend_url }}
           ND_APP_TOKEN: ${{ secrets.ND_APP_TOKEN_TMP }}
           ND_SECTIONS: ${{ inputs.sections || 'all' }}
+          ND_SEED: ${{ inputs.seed || '1' }}
           BUILD_TYPE: ${{ inputs.build_type }}
         with:
           api-level: 34
