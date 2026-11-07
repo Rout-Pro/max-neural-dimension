@@ -7,7 +7,14 @@ package com.max.neuraldimension.core.gl
 object RobotState {
     enum class Mode { IDLE, LISTENING, THINKING, SPEAKING, HAPPY, CURIOUS, CONFUSED, EXCITED, ERROR }
 
+    /** Central transition log (logcat tag MAX_STATE) so mode wiring is runtime-assertable. */
     @Volatile var mode: Mode = Mode.IDLE
+        set(v) {
+            if (field != v) {
+                field = v
+                android.util.Log.i("MAX_STATE", "mode=" + v.name)
+            }
+        }
     /** Live speech amplitude 0..1 driving the jaw/mouth. */
     @Volatile var mouthAmp: Float = 0f
     /** 0.3f..1.5f user animation intensity setting. */
