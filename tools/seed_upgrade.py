@@ -105,12 +105,15 @@ ANR_STATE = os.environ.get('ND_ANR_STATE', '/tmp/nd_anr_recovered')
 def dismiss_anr():
     xml = dump()
     if 'responding' in xml and 'Wait' in xml:
+        m = re.search(r'text="([^"]*(?:isn.t|is not) responding)"', xml)
+        print('ANR dialog label:', m.group(1) if m else 'unparsed', flush=True)
         tap_text('Wait', timeout=3, exact=True)
         time.sleep(2)
         # Run-wide budget (shared with drive_ui.py via ND_ANR_STATE): the
         # FIRST ANR gets Wait + one app relaunch + fresh UI state (no
         # clear/uninstall); a SECOND ANR anywhere in the run stops blocked.
         if os.path.exists(ANR_STATE):
+            fail_shot('seed-anr-blocked')
             print('SEED ENV-BLOCKED: second ANR after recovery - stopping', flush=True)
             sys.exit(1)
         open(ANR_STATE, 'w').write('1')

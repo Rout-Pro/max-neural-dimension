@@ -257,6 +257,8 @@ def dismiss_anr():
     # Always choose Wait - "Close app" would kill the foreground app.
     xml = dump()
     if 'responding' in xml and 'Wait' in xml:
+        m = re.search(r'text="([^"]*(?:isn.t|is not) responding)"', xml)
+        print('ANR dialog label:', m.group(1) if m else 'unparsed'); sys.stdout.flush()
         if tap_text('Wait', timeout=3, exact=True):
             print('dismissed ANR dialog via Wait'); sys.stdout.flush()
             time.sleep(2)
