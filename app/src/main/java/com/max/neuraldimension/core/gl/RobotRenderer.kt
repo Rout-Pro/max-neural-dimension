@@ -187,6 +187,7 @@ void main() {
     private var tiltS = 0f
     private var pulseS = 0f
     private var mouthWideS = 1f
+    private var smileS = 0f
     private var nextSaccade = 0f
     private var saccadeTarget = 0f
 
@@ -314,6 +315,7 @@ void main() {
         var mouthWideT = 1f
         var tiltT = 0f
         var pulseT = 0f
+        var smileT = 0f
 
         when (mode) {
             RobotState.Mode.LISTENING -> {
@@ -335,10 +337,29 @@ void main() {
                 headGroup.rx += 0.045f * sin(t * 6.5f) * ampSmooth
                 pulseT = ampSmooth * 0.8f
             }
-            RobotState.Mode.HAPPY, RobotState.Mode.EXCITED -> {
+            RobotState.Mode.HAPPY -> {
+                // gentle smile: smile morph blended over speech-safe mouthOpen floor
                 blinkW = maxOf(blinkW, 0.38f)
                 mouthW = maxOf(mouthW, 0.55f); mouthWideT = 1.3f
                 tiltT = 0.08f
+                smileT = 0.85f
+            }
+            RobotState.Mode.EXCITED -> {
+                // bigger smile + energetic pulse and head bob (distinct from HAPPY)
+                blinkW = maxOf(blinkW, 0.38f)
+                mouthW = maxOf(mouthW, 0.65f); mouthWideT = 1.35f
+                tiltT = 0.08f
+                smileT = 1f
+                eyeScaleT = 1.15f
+                headGroup.rx += 0.05f * sin(t * 8f) * intensity
+                pulseT = 0.4f + 0.3f * sin(t * 9f)
+            }
+            RobotState.Mode.SURPRISE -> {
+                // rounded open mouth + wide eyes + slight back-tilt; no smile
+                mouthW = maxOf(mouthW, 0.85f); mouthWideT = 0.85f
+                eyeScaleT = 1.3f
+                tiltT = -0.06f
+                pulseT = 0.2f
             }
             RobotState.Mode.CURIOUS -> {
                 eyeScaleT = 1.12f; tiltT = 0.13f
@@ -365,6 +386,7 @@ void main() {
         eyeShiftS += (eyeShiftT - eyeShiftS) * 0.10f
         tiltS += (tiltT - tiltS) * 0.10f
         mouthWideS += (mouthWideT - mouthWideS) * 0.10f
+        smileS += (smileT - smileS) * 0.10f
         pulseS += (pulseT - pulseS) * 0.20f
         pulse = pulseS
         headGroup.rz += tiltS
@@ -380,6 +402,7 @@ void main() {
         eyeL.morphW[0] = blinkW; eyeR.morphW[0] = blinkW
 
         mouth.morphW[0] = mouthW
+        mouth.morphW[1] = smileS
         mouth.sx = mouth.baseSx * mouthWideS
     }
 

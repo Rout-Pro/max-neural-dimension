@@ -185,6 +185,16 @@ def morph_scale_y(pos, factor):
         d += [0.0, pos[i + 1] * (factor - 1.0), 0.0]
     return d
 
+def morph_smile(pos, k=2.5, center_dip=0.35):
+    # Smile arc: mouth corners (|x| extremes) rise along a parabola while the
+    # center dips slightly. Applied as a vertex shift, so the mouth line bends
+    # without changing its silhouette thickness.
+    d = []
+    for i in range(0, len(pos), 3):
+        x = pos[i]
+        d += [0.0, k * (x * x - center_dip), 0.0]
+    return d
+
 def main():
     g = Glb()
     m_silver = g.add_material("ceramic_silver", SILVER, 0.85, 0.25)
@@ -210,9 +220,10 @@ def main():
     eye_pos = sp[0]
     mesh_eye = g.add_mesh("eye", sp[0], sp[1], sp[2], m_eye,
                           morphs=[("blink", morph_scale_y(eye_pos, 0.08))])
-    # mouth: sphere + "mouthOpen" morph (stretch Y)
+    # mouth: sphere + "mouthOpen" morph (stretch Y) + "smile" morph (corner arc)
     mesh_mouth = g.add_mesh("mouth", sp[0], sp[1], sp[2], m_mouth,
-                            morphs=[("mouthOpen", morph_scale_y(eye_pos, 4.2))])
+                            morphs=[("mouthOpen", morph_scale_y(eye_pos, 4.2)),
+                                    ("smile", morph_smile(eye_pos))])
     mesh_core = g.add_mesh("core", *sp, m_core)
 
     n_torso = g.add_node("torso", mesh_body, t=[0, -1.62, 0], s=[0.98, 0.98, 0.72])
@@ -224,7 +235,7 @@ def main():
     n_face = g.add_node("face", mesh_face, t=[0, 0.10, 0.235], s=[0.465, 0.55, 0.375])
     n_eye_l = g.add_node("eyeL", mesh_eye, t=[-0.175, 0.16, 0.55], s=[0.062, 0.085, 0.03], weights=[0.0])
     n_eye_r = g.add_node("eyeR", mesh_eye, t=[0.175, 0.16, 0.55], s=[0.062, 0.085, 0.03], weights=[0.0])
-    n_mouth = g.add_node("mouth", mesh_mouth, t=[0, -0.155, 0.55], s=[0.115, 0.018, 0.02], weights=[0.0])
+    n_mouth = g.add_node("mouth", mesh_mouth, t=[0, -0.155, 0.55], s=[0.115, 0.018, 0.02], weights=[0.0, 0.0])
     n_ear_l = g.add_node("earL", mesh_neck, t=[-0.575, 0.10, 0], r=[0, 0, math.sin(math.pi / 2), math.cos(math.pi / 2)], s=[0.10, 0.05, 0.10])
     n_ear_r = g.add_node("earR", mesh_neck, t=[0.575, 0.10, 0], r=[0, 0, math.sin(math.pi / 2), math.cos(math.pi / 2)], s=[0.10, 0.05, 0.10])
     n_head = g.add_node("head", children=[n_skull, n_face, n_eye_l, n_eye_r, n_mouth, n_ear_l, n_ear_r], t=[0, 0.32, 0])
