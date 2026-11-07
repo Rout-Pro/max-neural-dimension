@@ -35,11 +35,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.OutlinedTextField
 import com.max.neuraldimension.core.theme.NdBlack
+import com.max.neuraldimension.features.assistant.BriefingWorker
 import com.max.neuraldimension.core.theme.NdLavender
 import com.max.neuraldimension.core.theme.NdMuted
 import com.max.neuraldimension.core.theme.NdNeon
@@ -50,6 +52,7 @@ import com.max.neuraldimension.core.theme.NdViolet
 import com.max.neuraldimension.data.prefs.MaxSettings
 import com.max.neuraldimension.data.prefs.Personality
 import com.max.neuraldimension.features.chat.AppViewModel
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 @Composable
@@ -194,6 +197,64 @@ fun SettingsScreen(vm: AppViewModel) {
                 }) { Text("Add", color = NdLavender) }
             }
             Text("Memories are stored only on this device and are sent to your provider as part of the chat context.", color = NdMuted, fontSize = 11.sp)
+        }
+
+        Section("Quiet hours and daily briefing") {
+            val context = LocalContext.current
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Quiet hours", color = NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Switch(
+                    checked = s.quietHoursEnabled,
+                    onCheckedChange = { v -> scope.launch { vm.settingsRepo.update { it.copy(quietHoursEnabled = v) } } },
+                    colors = SwitchDefaults.colors(checkedTrackColor = NdViolet)
+                )
+            }
+            if (s.quietHoursEnabled) {
+                Text("From %02d:00 to %02d:00".format(s.quietStartMin / 60, s.quietEndMin / 60), color = NdSilver, fontSize = 13.sp)
+                Text("Start hour: %02d:00".format(s.quietStartMin / 60), color = NdMuted, fontSize = 11.sp)
+                Slider(
+                    value = s.quietStartMin / 60f, valueRange = 0f..23f, steps = 22,
+                    onValueChange = { v -> scope.launch { vm.settingsRepo.update { it.copy(quietStartMin = v.roundToInt() * 60) } } },
+                    colors = SliderDefaults.colors(activeTrackColor = NdViolet, thumbColor = NdNeon)
+                )
+                Text("End hour: %02d:00".format(s.quietEndMin / 60), color = NdMuted, fontSize = 11.sp)
+                Slider(
+                    value = s.quietEndMin / 60f, valueRange = 0f..23f, steps = 22,
+                    onValueChange = { v -> scope.launch { vm.settingsRepo.update { it.copy(quietEndMin = v.roundToInt() * 60) } } },
+                    colors = SliderDefaults.colors(activeTrackColor = NdViolet, thumbColor = NdNeon)
+                )
+                Text(
+                    "Reminders and the daily briefing that fall inside quiet hours are deferred to the end of the window instead of firing during it. They fire late, not never - nothing is deleted or changed.",
+                    color = NdMuted, fontSize = 11.sp
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Daily briefing", color = NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Switch(
+                    checked = s.briefingEnabled,
+                    onCheckedChange = { v ->
+                        scope.launch { vm.settingsRepo.update { it.copy(briefingEnabled = v) } }
+                        if (v) BriefingWorker.scheduleNext(context, s.briefingMinOfDay) else BriefingWorker.cancel(context)
+                    },
+                    colors = SwitchDefaults.colors(checkedTrackColor = NdViolet)
+                )
+            }
+            if (s.briefingEnabled) {
+                Text("Around %02d:00 each day".format(s.briefingMinOfDay / 60), color = NdSilver, fontSize = 13.sp)
+                Slider(
+                    value = s.briefingMinOfDay / 60f, valueRange = 0f..23f, steps = 22,
+                    onValueChange = { v ->
+                        val m = v.roundToInt() * 60
+                        scope.launch { vm.settingsRepo.update { it.copy(briefingMinOfDay = m) } }
+                        BriefingWorker.scheduleNext(context, m)
+                    },
+                    colors = SliderDefaults.colors(activeTrackColor = NdViolet, thumbColor = NdNeon)
+                )
+                Text(
+                    "Arrives as a notification around the chosen time. Android may deliver it a little late to save battery, so this is not an exact alarm.",
+                    color = NdMuted, fontSize = 11.sp
+                )
+            }
         }
 
         Section("About MAX 2.0") {

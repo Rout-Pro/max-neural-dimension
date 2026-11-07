@@ -7,9 +7,14 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.max.neuraldimension.data.db.AppDb
+import com.max.neuraldimension.data.prefs.SettingsRepository
 import kotlinx.coroutines.flow.first
+import java.time.ZoneId
+import java.util.concurrent.TimeUnit
 
 /**
  * Fires a scheduled reminder as a real system notification and marks it fired.
@@ -21,6 +26,31 @@ class ReminderWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
     override suspend fun doWork(): Result {
         val reminderId = inputData.getLong(KEY_ID, -1L)
         val title = inputData.getString(KEY_TITLE) ?: "Reminder"
+
+        // Blueprint Part 17: with opt-in quiet hours enabled, a fire inside the
+        // window is deferred to the end of the window (never dropped). The DB row
+        // keeps tracking the replacement work so Cancel still works.
+        val settings = SettingsRepository(applicationContext).settings.first()
+        val zone = ZoneId.systemDefault()
+        val now = System.currentTimeMillis()
+        if (QuietHours.isQuiet(now, settings.quietHoursEnabled, settings.quietStartMin, settings.quietEndMin, zone)) {
+            val next = QuietHours.nextAllowedFireMillis(
+                now, settings.quietHoursEnabled, settings.quietStartMin, settings.quietEndMin, zone
+            )
+            val work = OneTimeWorkRequestBuilder<ReminderWorker>()
+                .setInitialDelay(next - now, TimeUnit.MILLISECONDS)
+                .setInputData(inputData)
+                .addTag("nd-reminder")
+                .build()
+            WorkManager.getInstance(applicationContext).enqueue(work)
+            if (reminderId > 0) {
+                val db = AppDb.get(applicationContext)
+                db.reminderDao().reminders().first().firstOrNull { it.id == reminderId }
+                    ?.let { db.reminderDao().update(it.copy(triggerAt = next, workId = work.id.toString())) }
+            }
+            return Result.success()
+        }
+
         val nm = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "Reminders", NotificationManager.IMPORTANCE_HIGH)

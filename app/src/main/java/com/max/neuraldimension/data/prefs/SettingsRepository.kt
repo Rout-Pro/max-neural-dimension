@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -35,7 +36,16 @@ data class MaxSettings(
     val reducedMotion: Boolean = false,
     val memories: Set<String> = emptySet(),
     /** "url\n token" pair that last passed an authenticated health test; stale entries stop matching when config changes. */
-    val backendVerifiedFor: String = ""
+    val backendVerifiedFor: String = "",
+    /** Blueprint Part 17: opt-in quiet hours, OFF by default so existing reminders are not silently changed. */
+    val quietHoursEnabled: Boolean = false,
+    /** Quiet window start/end as local minutes-of-day; wraps midnight when start > end. */
+    val quietStartMin: Int = 22 * 60,
+    val quietEndMin: Int = 7 * 60,
+    /** Blueprint Part 17: opt-in scheduled daily briefing, OFF by default; delivery is inexact (WorkManager). */
+    val briefingEnabled: Boolean = false,
+    /** Briefing clock time as local minutes-of-day. */
+    val briefingMinOfDay: Int = 8 * 60
 )
 
 class SettingsRepository(private val context: Context) {
@@ -55,6 +65,11 @@ class SettingsRepository(private val context: Context) {
         val REDUCED_MOTION = booleanPreferencesKey("reduced_motion")
         val MEMORIES = stringSetPreferencesKey("memories")
         val VERIFIED = stringPreferencesKey("backend_verified_for")
+        val QUIET_ENABLED = booleanPreferencesKey("quiet_hours_enabled")
+        val QUIET_START = intPreferencesKey("quiet_start_min")
+        val QUIET_END = intPreferencesKey("quiet_end_min")
+        val BRIEFING_ENABLED = booleanPreferencesKey("briefing_enabled")
+        val BRIEFING_TIME = intPreferencesKey("briefing_min_of_day")
     }
 
     val settings: Flow<MaxSettings> = context.dataStore.data.map { p -> snapshot(p) }
@@ -76,6 +91,11 @@ class SettingsRepository(private val context: Context) {
             p[K.REDUCED_MOTION] = n.reducedMotion
             p[K.MEMORIES] = n.memories
             p[K.VERIFIED] = n.backendVerifiedFor
+            p[K.QUIET_ENABLED] = n.quietHoursEnabled
+            p[K.QUIET_START] = n.quietStartMin
+            p[K.QUIET_END] = n.quietEndMin
+            p[K.BRIEFING_ENABLED] = n.briefingEnabled
+            p[K.BRIEFING_TIME] = n.briefingMinOfDay
         }
     }
 
@@ -93,6 +113,11 @@ class SettingsRepository(private val context: Context) {
         animIntensity = p[K.ANIM_INTENSITY] ?: 1.0f,
         reducedMotion = p[K.REDUCED_MOTION] ?: false,
         memories = p[K.MEMORIES] ?: emptySet(),
-        backendVerifiedFor = p[K.VERIFIED] ?: ""
+        backendVerifiedFor = p[K.VERIFIED] ?: "",
+        quietHoursEnabled = p[K.QUIET_ENABLED] ?: false,
+        quietStartMin = p[K.QUIET_START] ?: 22 * 60,
+        quietEndMin = p[K.QUIET_END] ?: 7 * 60,
+        briefingEnabled = p[K.BRIEFING_ENABLED] ?: false,
+        briefingMinOfDay = p[K.BRIEFING_TIME] ?: 8 * 60
     )
 }
