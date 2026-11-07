@@ -354,13 +354,6 @@ void main() {
                 headGroup.rx += 0.05f * sin(t * 8f) * intensity
                 pulseT = 0.4f + 0.3f * sin(t * 9f)
             }
-            RobotState.Mode.SURPRISE -> {
-                // rounded open mouth + wide eyes + slight back-tilt; no smile
-                mouthW = maxOf(mouthW, 0.85f); mouthWideT = 0.85f
-                eyeScaleT = 1.3f
-                tiltT = -0.06f
-                pulseT = 0.2f
-            }
             RobotState.Mode.CURIOUS -> {
                 eyeScaleT = 1.12f; tiltT = 0.13f
                 eyeShiftT = 0.02f * sin(t * 1.2f)
