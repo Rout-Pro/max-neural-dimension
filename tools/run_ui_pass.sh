@@ -12,6 +12,19 @@ set -euo pipefail
 rm -rf shots
 mkdir -p shots
 
+# Run-wide ANR recovery budget, shared by seed_upgrade.py and drive_ui.py:
+# the FIRST ANR gets Wait + one app relaunch + fresh UI state; a SECOND ANR
+# anywhere in the run stops the job ENV-BLOCKED for review (no storm-riding).
+export ND_ANR_STATE=/tmp/nd_anr_recovered
+rm -f "$ND_ANR_STATE"
+
+# Production guard: the CI emulator job must never run against the local fake
+# adb harness or any adb that is not the real Android Debug Bridge.
+if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+  [ -z "${ND_FAKE_STATE:-}" ] || { echo 'REFUSE: ND_FAKE_STATE set in CI job'; exit 1; }
+  adb version 2>/dev/null | grep -q 'Android Debug Bridge' || { echo 'REFUSE: adb is not the real Android Debug Bridge'; exit 1; }
+fi
+
 # chat-real mode: verify the live backend accepts the app token BEFORE any
 # provider call happens. Backend auth check only - /v1/health never calls the
 # provider. Stop cheap and early on failure.

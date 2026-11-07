@@ -100,11 +100,24 @@ def dismiss_keyboard():
     sh('adb', 'shell', 'input', 'keyevent', '4')
     time.sleep(1)
 
+ANR_STATE = os.environ.get('ND_ANR_STATE', '/tmp/nd_anr_recovered')
+
 def dismiss_anr():
     xml = dump()
     if 'responding' in xml and 'Wait' in xml:
         tap_text('Wait', timeout=3, exact=True)
         time.sleep(2)
+        # Run-wide budget (shared with drive_ui.py via ND_ANR_STATE): the
+        # FIRST ANR gets Wait + one app relaunch + fresh UI state (no
+        # clear/uninstall); a SECOND ANR anywhere in the run stops blocked.
+        if os.path.exists(ANR_STATE):
+            print('SEED ENV-BLOCKED: second ANR after recovery - stopping', flush=True)
+            sys.exit(1)
+        open(ANR_STATE, 'w').write('1')
+        print('SEED ANR recovery: relaunching app for fresh UI state', flush=True)
+        sh('adb', 'shell', 'am', 'force-stop', PKG)
+        sh('adb', 'shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1')
+        time.sleep(12)
         return True
     return False
 

@@ -18,9 +18,11 @@ def shot(name):
     with open(path, 'wb') as f:
         subprocess.run(['adb', 'exec-out', 'screencap', '-p'], stdout=f)
     print('shot', name); sys.stdout.flush()
-    # Provenance gate: a real device frame is never a tiny placeholder. A
-    # checked-in/local fixture must fail loudly here instead of uploading as
-    # device evidence (run 42333479189).
+    # Size sanity gate: a device frame is never a tiny placeholder, and a
+    # checked-in/local fixture fails loudly instead of uploading as evidence
+    # (run 42333479189). A VALID SIZE ALONE IS NOT DEVICE PROOF - the fake
+    # harness emits valid-sized frames; provenance comes from the CI job
+    # guards (empty shots/ at start, real adb check), not from dimensions.
     try:
         with open(path, 'rb') as f:
             d = f.read(26)
@@ -28,7 +30,7 @@ def shot(name):
     except Exception:
         w = h = 0
     if w < 240 or h < 240:
-        assert_true('artifact provenance: shot %s is a real device frame (got %sx%s)' % (name, w, h), False)
+        assert_true('artifact size gate: shot %s is a valid-sized frame (got %sx%s)' % (name, w, h), False)
 
 def dump(path='/tmp/ui.xml'):
     for _ in range(3):
@@ -223,6 +225,19 @@ def dismiss_keyboard():
     adb('shell', 'input', 'keyevent', '4')
     time.sleep(1)
 
+ANR_STATE = os.environ.get('ND_ANR_STATE', '/tmp/nd_anr_recovered')
+
+def anr_recover():
+    # Run-wide budget: the FIRST ANR gets Wait + one app relaunch + fresh UI
+    # state (no clear/uninstall). A SECOND ANR anywhere in the run stops it
+    # ENV-BLOCKED for review - no storm-riding, no auto retry.
+    if os.path.exists(ANR_STATE):
+        env_blocked('second-anr')
+    open(ANR_STATE, 'w').write('1')
+    print('ANR recovery: relaunching app for fresh UI state (no clear/uninstall)')
+    sys.stdout.flush()
+    relaunch()
+
 def dismiss_anr():
     # Emulator system ANR dialog ("<app> isn't responding") steals all input.
     # Always choose Wait - "Close app" would kill the foreground app.
@@ -231,6 +246,7 @@ def dismiss_anr():
         if tap_text('Wait', timeout=3, exact=True):
             print('dismissed ANR dialog via Wait'); sys.stdout.flush()
             time.sleep(2)
+            anr_recover()
             return True
     return False
 
@@ -283,7 +299,9 @@ def settle(timeout=90):
         xml = dump()
         if "isn't responding" in xml or 'is not responding' in xml:
             quiet = 0
-            tap_text('Wait', timeout=2)
+            if tap_text('Wait', timeout=2):
+                print('settle: dismissed ANR via Wait'); sys.stdout.flush()
+                anr_recover()
             time.sleep(4)
         else:
             quiet += 1
