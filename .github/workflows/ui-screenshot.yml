@@ -6,7 +6,8 @@ on:
       sections:
         description: 'Comma list: all,migration,core,regen,rename,edit,attachments,conv2,incognito,delete,errors,upgrade,weather,habits,remind,device,studio,voice3,voice-speak,tail (smoke gate always runs)'
         required: false
-        default: 'all'
+        # Never default to 'all' (widened destructively before). Safe smoke default.
+        default: 'voice3,voice-speak'
       real_backend_url:
         description: 'chat-real mode: live backend URL (non-secret). Empty = seeded .invalid URL (default honest-state path)'
         required: false

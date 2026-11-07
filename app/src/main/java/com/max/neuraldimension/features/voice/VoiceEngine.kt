@@ -35,6 +35,13 @@ import kotlin.math.sqrt
  */
 class VoiceEngine(private val context: Context, private val scope: CoroutineScope) {
 
+    companion object {
+        /** Continuous-conversation relisten gate. Pure; unit-tested (VoiceFlowTest). */
+        fun shouldResumeListening(continuous: Boolean, muted: Boolean, busy: Boolean, speaking: Boolean): Boolean =
+            continuous && !muted && !busy && !speaking
+    }
+
+
     interface Listener {
         fun onListeningChanged(listening: Boolean)
         fun onPartial(text: String)

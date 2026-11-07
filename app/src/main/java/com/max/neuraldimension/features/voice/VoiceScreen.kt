@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -38,6 +39,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,9 +82,16 @@ fun VoiceScreen(vm: AppViewModel) {
     var continuous by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var tick by remember { mutableIntStateOf(0) }
+    var muted by remember { mutableStateOf(false) }
+    var micLevel by remember { mutableFloatStateOf(0f) }
 
     LaunchedEffect(Unit) {
         while (true) { tick++; delay(500) }
+    }
+    // Live mic activity indicator: samples the recognizer rms pulse while listening.
+    LaunchedEffect(listening) {
+        while (listening) { micLevel = vm.voice.pulseAmp.coerceIn(0f, 1f); delay(60) }
+        micLevel = 0f
     }
 
     var micDenied by remember { mutableStateOf(false) }
@@ -111,20 +120,26 @@ fun VoiceScreen(vm: AppViewModel) {
                     busy = false
                     if (reply.isBlank()) {
                         statusText = "AI reply unavailable - connect the secure backend in Settings"
-                        if (continuous) { delay(1200); vm.voice.startListening() }
+                        if (VoiceEngine.shouldResumeListening(continuous, muted, busy = false, speaking = false)) {
+                            delay(1200)
+                            if (VoiceEngine.shouldResumeListening(continuous, muted, busy = false, speaking = false)) vm.voice.startListening()
+                        }
                     } else {
                         transcript = transcript + (settings.assistantName to reply)
                         statusText = "Speaking... tap stop to interrupt"
                         vm.voice.speak(reply)
-                        statusText = if (continuous) "Listening..." else "Tap the mic to talk"
-                        if (continuous) vm.voice.startListening()
+                        statusText = if (continuous && !muted) "Listening..." else "Tap the mic to talk"
+                        if (VoiceEngine.shouldResumeListening(continuous, muted, busy = false, speaking = false)) vm.voice.startListening()
                     }
                 }
             }
             override fun onSpeechError(message: String) {
                 statusText = message
-                if (continuous && !busy && !vm.voice.speaking) {
-                    scope.launch { delay(1500); if (continuous) vm.voice.startListening() }
+                if (VoiceEngine.shouldResumeListening(continuous, muted, busy, vm.voice.speaking)) {
+                    scope.launch {
+                        delay(1500)
+                        if (VoiceEngine.shouldResumeListening(continuous, muted, busy, vm.voice.speaking)) vm.voice.startListening()
+                    }
                 }
             }
             override fun onSpeakingChanged(s: Boolean) { speaking = s }
@@ -154,6 +169,19 @@ fun VoiceScreen(vm: AppViewModel) {
 
         // Robot visible during conversation
         Box(Modifier.fillMaxWidth().height(300.dp)) { RobotView(Modifier.fillMaxSize()) }
+
+        // Live mic activity: driven by the recognizer rms pulse, not a fake meter.
+        if (listening) {
+            Box(
+                Modifier.fillMaxWidth().padding(horizontal = 18.dp).height(4.dp)
+                    .background(NdPanelDeep, RoundedCornerShape(2.dp))
+            ) {
+                Box(
+                    Modifier.fillMaxHeight().fillMaxWidth(micLevel)
+                        .background(NdOk, RoundedCornerShape(2.dp))
+                )
+            }
+        }
 
         Column(
             Modifier.weight(1f).fillMaxWidth().padding(horizontal = 18.dp).verticalScroll(rememberScrollState())
@@ -213,7 +241,9 @@ fun VoiceScreen(vm: AppViewModel) {
                 contentAlignment = Alignment.Center
             ) {
                 IconButton(onClick = {
-                    if (listening) {
+                    if (muted) {
+                        statusText = "Microphone muted - unmute to talk"
+                    } else if (listening) {
                         continuous = false
                         vm.voice.stopListening()
                         statusText = "Stopped"
@@ -235,9 +265,27 @@ fun VoiceScreen(vm: AppViewModel) {
             IconButton(onClick = {
                 vm.voice.stopSpeaking()
                 statusText = if (continuous) "Listening..." else "Interrupted"
-                if (continuous) vm.voice.startListening()
+                if (VoiceEngine.shouldResumeListening(continuous, muted, busy, speaking = false)) vm.voice.startListening()
             }) {
                 Icon(Icons.Default.Stop, contentDescription = "Interrupt MAX", tint = NdError, modifier = Modifier.size(26.dp))
+            }
+            Spacer(Modifier.width(18.dp))
+            IconButton(onClick = {
+                muted = !muted
+                if (muted) {
+                    vm.voice.stopListening()
+                    statusText = "Microphone muted"
+                } else {
+                    statusText = if (continuous) "Listening..." else "Microphone on - tap the mic to talk"
+                    if (VoiceEngine.shouldResumeListening(continuous, muted = false, busy, speaking)) vm.voice.startListening()
+                }
+            }) {
+                Icon(
+                    if (muted) Icons.Default.MicOff else Icons.Default.Mic,
+                    contentDescription = if (muted) "Unmute microphone" else "Mute microphone",
+                    tint = if (muted) NdError else NdMuted,
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
 

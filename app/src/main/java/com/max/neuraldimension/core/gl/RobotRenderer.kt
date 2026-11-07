@@ -181,6 +181,14 @@ void main() {
     private var ampSmooth = 0f
     private var errMix = 0f
     private var pulse = 0f
+    // Smoothed expression channels (Part 4: smooth transitions between expressions).
+    private var eyeScaleS = 1f
+    private var eyeShiftS = 0f
+    private var tiltS = 0f
+    private var pulseS = 0f
+    private var mouthWideS = 1f
+    private var nextSaccade = 0f
+    private var saccadeTarget = 0f
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         startTime = SystemClock.uptimeMillis()
@@ -300,60 +308,79 @@ void main() {
         headGroup.py = 0.32f + 0.015f * idle
 
         ring.ry = t * 0.5f * intensity
-        var eyeScale = 1f
-        var eyeShift = 0f
+        var eyeScaleT = 1f
+        var eyeShiftT = 0f
         var mouthW = ampSmooth
-        var mouthWide = 1f
-        pulse = 0f
+        var mouthWideT = 1f
+        var tiltT = 0f
+        var pulseT = 0f
 
         when (mode) {
             RobotState.Mode.LISTENING -> {
-                eyeScale = 1.18f
-                headGroup.rz += 0.05f
+                eyeScaleT = 1.18f
+                tiltT = 0.05f
                 ring.ry = t * 1.6f * intensity
-                pulse = 0.25f + 0.2f * sin(t * 4f)
+                pulseT = 0.25f + 0.2f * sin(t * 4f)
                 face.emissive = f3(0.16f, 0.07f, 0.32f)
+                // attentive gaze: eyes converge on the user in front of the screen
+                eyeShiftT = 0f
             }
             RobotState.Mode.THINKING -> {
-                eyeShift = 0.035f * sin(t * 2.4f)
-                headGroup.rz += 0.10f
+                eyeShiftT = 0.035f * sin(t * 2.4f)
+                tiltT = 0.10f
                 ring.ry = t * 2.6f * intensity
-                pulse = 0.3f + 0.25f * sin(t * 7f)
+                pulseT = 0.3f + 0.25f * sin(t * 7f)
             }
             RobotState.Mode.SPEAKING -> {
                 headGroup.rx += 0.045f * sin(t * 6.5f) * ampSmooth
-                pulse = ampSmooth * 0.8f
+                pulseT = ampSmooth * 0.8f
             }
             RobotState.Mode.HAPPY, RobotState.Mode.EXCITED -> {
                 blinkW = maxOf(blinkW, 0.38f)
-                mouthW = maxOf(mouthW, 0.55f); mouthWide = 1.3f
-                headGroup.rz += 0.08f
+                mouthW = maxOf(mouthW, 0.55f); mouthWideT = 1.3f
+                tiltT = 0.08f
             }
             RobotState.Mode.CURIOUS -> {
-                eyeScale = 1.12f; headGroup.rz += 0.13f
-                eyeShift = 0.02f * sin(t * 1.2f)
+                eyeScaleT = 1.12f; tiltT = 0.13f
+                eyeShiftT = 0.02f * sin(t * 1.2f)
             }
             RobotState.Mode.CONFUSED -> {
-                headGroup.rz += -0.11f
+                tiltT = -0.11f
             }
             RobotState.Mode.ERROR -> {
-                pulse = 0.5f
+                pulseT = 0.5f
             }
-            else -> {}
+            else -> {
+                // IDLE gaze saccades: slow drift biased back to center, toward the
+                // person in front of the screen. No camera, no tracking, no new data.
+                if (t > nextSaccade) {
+                    saccadeTarget = (Random.nextFloat() - 0.5f) * 0.02f
+                    nextSaccade = t + 2.2f + Random.nextFloat() * 3.4f
+                }
+                eyeShiftT = saccadeTarget
+            }
         }
+
+        eyeScaleS += (eyeScaleT - eyeScaleS) * 0.10f
+        eyeShiftS += (eyeShiftT - eyeShiftS) * 0.10f
+        tiltS += (tiltT - tiltS) * 0.10f
+        mouthWideS += (mouthWideT - mouthWideS) * 0.10f
+        pulseS += (pulseT - pulseS) * 0.20f
+        pulse = pulseS
+        headGroup.rz += tiltS
 
         errMix += ((if (mode == RobotState.Mode.ERROR) 1f else 0f) - errMix) * 0.12f
         val eL = mix(f3(0.75f, 0.55f, 1.15f), f3(1.2f, 0.25f, 0.22f), errMix)
         eyeL.emissive = eL; eyeR.emissive = eL.copyOf()
         mouth.emissive = mix(f3(0.55f, 0.28f, 0.95f), f3(1.1f, 0.2f, 0.2f), errMix)
 
-        eyeL.sx = eyeL.baseSx * eyeScale; eyeL.sy = eyeL.baseSy * eyeScale
-        eyeR.sx = eyeR.baseSx * eyeScale; eyeR.sy = eyeR.baseSy * eyeScale
-        eyeL.px = -0.175f + eyeShift; eyeR.px = 0.175f + eyeShift
+        eyeL.sx = eyeL.baseSx * eyeScaleS; eyeL.sy = eyeL.baseSy * eyeScaleS
+        eyeR.sx = eyeR.baseSx * eyeScaleS; eyeR.sy = eyeR.baseSy * eyeScaleS
+        eyeL.px = -0.175f + eyeShiftS; eyeR.px = 0.175f + eyeShiftS
         eyeL.morphW[0] = blinkW; eyeR.morphW[0] = blinkW
 
         mouth.morphW[0] = mouthW
-        mouth.sx = mouth.baseSx * mouthWide
+        mouth.sx = mouth.baseSx * mouthWideS
     }
 
     private fun mix(a: FloatArray, b: FloatArray, m: Float) = f3(

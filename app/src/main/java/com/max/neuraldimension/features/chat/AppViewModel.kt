@@ -147,7 +147,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 viewModelScope.launch { delay(4000); if (RobotState.mode == RobotState.Mode.CONFUSED) RobotState.mode = RobotState.Mode.IDLE }
                 return ""
             }
-            RobotState.mode = RobotState.Mode.THINKING
+            // A user question shows CURIOUS while processing (UI animation cue
+            // only - not a claim of emotion understanding); other work shows THINKING.
+            RobotState.mode = if (text.trimEnd().endsWith("?")) RobotState.Mode.CURIOUS else RobotState.Mode.THINKING
             val history = if (incognito.value) {
                 incognitoMessages.value
                     .filter { !it.text.startsWith("SETUP_REQUIRED::") && !it.text.startsWith("ERROR::") }
@@ -321,7 +323,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (h.lastDoneDay == today) return@launch
             val newStreak = if (h.lastDoneDay == today - 1) h.streak + 1 else 1
             db.habitDao().update(h.copy(lastDoneDay = today, streak = newStreak))
+            pulseExpression(RobotState.Mode.HAPPY, 4000)
         }
+    }
+
+    /** Brief expression tied to a real completion event, then back to IDLE. */
+    private fun pulseExpression(mode: RobotState.Mode, ms: Long) {
+        RobotState.mode = mode
+        viewModelScope.launch { delay(ms); if (RobotState.mode == mode) RobotState.mode = RobotState.Mode.IDLE }
     }
 
     fun deleteHabit(h: Habit) {
@@ -375,7 +384,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleTask(t: TaskItem) {
-        viewModelScope.launch { db.taskDao().update(t.copy(done = !t.done)) }
+        viewModelScope.launch {
+            db.taskDao().update(t.copy(done = !t.done))
+            if (!t.done) pulseExpression(RobotState.Mode.HAPPY, 4000)
+        }
     }
 
     fun deleteTask(t: TaskItem) {
