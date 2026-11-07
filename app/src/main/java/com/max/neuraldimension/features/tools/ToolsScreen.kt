@@ -162,9 +162,13 @@ fun ToolsScreen(vm: AppViewModel) {
             }
             reminders.take(5).forEach { r ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    val minsLeft = ((r.triggerAt - System.currentTimeMillis()) / 60000).coerceAtLeast(0)
+                    val effective = if (r.deferredUntil > 0) r.deferredUntil else r.triggerAt
+                    val minsLeft = ((effective - System.currentTimeMillis()) / 60000).coerceAtLeast(0)
+                    val deferredNote = if (r.deferredUntil > 0)
+                        " (quiet hours: moved from " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(r.triggerAt)) + ")"
+                    else ""
                     Text(
-                        (if (r.fired) "[fired] " else "") + r.title + " - in " + minsLeft + "m",
+                        (if (r.fired) "[fired] " else "") + r.title + " - in " + minsLeft + "m" + deferredNote,
                         color = if (r.fired) NdMuted else NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f)
                     )
                     TextButton(onClick = { vm.deleteReminder(r) }) { Text("Cancel", color = NdMuted, fontSize = 11.sp) }

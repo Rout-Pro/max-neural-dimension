@@ -29,7 +29,10 @@ class ReminderWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
 
         // Blueprint Part 17: with opt-in quiet hours enabled, a fire inside the
         // window is deferred to the end of the window (never dropped). The DB row
-        // keeps tracking the replacement work so Cancel still works.
+        // tracks the replacement work id (Cancel still works) and the deferred fire
+        // instant in deferredUntil; triggerAt keeps the user-requested time.
+        // Deferral is one-way: turning quiet hours off afterwards does not move a
+        // deferred reminder back (its requested time has already passed by then).
         val settings = SettingsRepository(applicationContext).settings.first()
         val zone = ZoneId.systemDefault()
         val now = System.currentTimeMillis()
@@ -46,7 +49,7 @@ class ReminderWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
             if (reminderId > 0) {
                 val db = AppDb.get(applicationContext)
                 db.reminderDao().reminders().first().firstOrNull { it.id == reminderId }
-                    ?.let { db.reminderDao().update(it.copy(triggerAt = next, workId = work.id.toString())) }
+                    ?.let { db.reminderDao().update(it.copy(deferredUntil = next, workId = work.id.toString())) }
             }
             return Result.success()
         }

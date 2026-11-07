@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material3.OutlinedTextField
 import com.max.neuraldimension.core.theme.NdBlack
-import com.max.neuraldimension.features.assistant.BriefingWorker
+import com.max.neuraldimension.features.assistant.BriefingScheduler
 import com.max.neuraldimension.core.theme.NdLavender
 import com.max.neuraldimension.core.theme.NdMuted
 import com.max.neuraldimension.core.theme.NdNeon
@@ -233,8 +233,10 @@ fun SettingsScreen(vm: AppViewModel) {
                 Switch(
                     checked = s.briefingEnabled,
                     onCheckedChange = { v ->
-                        scope.launch { vm.settingsRepo.update { it.copy(briefingEnabled = v) } }
-                        if (v) BriefingWorker.scheduleNext(context, s.briefingMinOfDay) else BriefingWorker.cancel(context)
+                        scope.launch {
+                            vm.settingsRepo.update { it.copy(briefingEnabled = v) }
+                            BriefingScheduler.reconcile(context)
+                        }
                     },
                     colors = SwitchDefaults.colors(checkedTrackColor = NdViolet)
                 )
@@ -244,10 +246,9 @@ fun SettingsScreen(vm: AppViewModel) {
                 Slider(
                     value = s.briefingMinOfDay / 60f, valueRange = 0f..23f, steps = 22,
                     onValueChange = { v ->
-                        val m = v.roundToInt() * 60
-                        scope.launch { vm.settingsRepo.update { it.copy(briefingMinOfDay = m) } }
-                        BriefingWorker.scheduleNext(context, m)
+                        scope.launch { vm.settingsRepo.update { it.copy(briefingMinOfDay = v.roundToInt() * 60) } }
                     },
+                    onValueChangeFinished = { scope.launch { BriefingScheduler.reconcile(context) } },
                     colors = SliderDefaults.colors(activeTrackColor = NdViolet, thumbColor = NdNeon)
                 )
                 Text(
@@ -263,7 +264,7 @@ fun SettingsScreen(vm: AppViewModel) {
             Text(
                 "Working now: rigged 3D robot (GLB asset with facial morph targets) with lip-synced voice, live voice conversation, " +
                     "streaming AI chat through your secure backend (keys stay server-side), chat history, tasks, memory, device tools.\n\n" +
-                    "Next phases: reminders and notifications, security lock, wake word, web development studio, " +
+                    "Next phases: security lock, wake word, web development studio, " +
                     "image/video generation (needs provider APIs on the backend), performance tiers.",
                 color = NdMuted, fontSize = 12.sp
             )

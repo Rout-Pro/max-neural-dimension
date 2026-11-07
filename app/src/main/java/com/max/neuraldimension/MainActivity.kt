@@ -29,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import com.max.neuraldimension.core.theme.NdBlack
 import com.max.neuraldimension.core.theme.NdLavender
 import com.max.neuraldimension.core.theme.NdMuted
@@ -53,6 +55,12 @@ private enum class Tab(val label: String, val icon: ImageVector) {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Reconcile the daily-briefing schedule against current settings and
+        // timezone on every cold start: repairs a lost chain and re-derives the
+        // pending delay in the current zone (REPLACE; generation-guarded).
+        lifecycleScope.launch {
+            com.max.neuraldimension.features.assistant.BriefingScheduler.reconcile(applicationContext)
+        }
         // CI-only: seed backend config for automated end-to-end tests. Compiled
         // out of the distributed APK (ND_TEST_HOOK=false there).
         if (BuildConfig.ND_TEST_HOOK) {

@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.max.neuraldimension.core.gl.RobotState
 import com.max.neuraldimension.data.db.AppDb
+import com.max.neuraldimension.features.assistant.effectiveAt
 import com.max.neuraldimension.data.db.Conversation
 import com.max.neuraldimension.data.db.Message
 import com.max.neuraldimension.data.db.Expense
@@ -366,13 +367,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun briefing(): String {
         val openTasks = tasks.value.count { !it.done }
         val now = System.currentTimeMillis()
-        val next = reminders.value.filter { !it.fired && it.triggerAt > now }.minByOrNull { it.triggerAt }
+        val next = reminders.value
+            .filter { !it.fired && it.effectiveAt() > now }
+            .minByOrNull { it.effectiveAt() }
         val today = java.time.LocalDate.now().toEpochDay()
         val habitsDone = habits.value.count { it.lastDoneDay == today }
         val totalHabits = habits.value.size
         val parts = mutableListOf<String>()
         parts.add("$openTasks open task" + (if (openTasks == 1) "" else "s"))
-        if (next != null) parts.add("next reminder: " + next.title + " in " + ((next.triggerAt - now) / 60000).coerceAtLeast(0) + "m")
+        if (next != null) parts.add("next reminder: " + next.title + " in " + ((next.effectiveAt() - now) / 60000).coerceAtLeast(0) + "m")
         if (totalHabits > 0) parts.add("habits $habitsDone/$totalHabits done today")
         weather.value?.let { if (!it.startsWith("Weather unavailable")) parts.add(it) }
         return parts.joinToString(" - ")

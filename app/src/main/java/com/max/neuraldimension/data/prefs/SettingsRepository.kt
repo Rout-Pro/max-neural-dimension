@@ -45,7 +45,9 @@ data class MaxSettings(
     /** Blueprint Part 17: opt-in scheduled daily briefing, OFF by default; delivery is inexact (WorkManager). */
     val briefingEnabled: Boolean = false,
     /** Briefing clock time as local minutes-of-day. */
-    val briefingMinOfDay: Int = 8 * 60
+    val briefingMinOfDay: Int = 8 * 60,
+    /** Monotonic schedule generation: any briefing work carrying an older generation is stale and no-ops. Bumped by every reconcile. */
+    val briefingGeneration: Int = 0
 )
 
 class SettingsRepository(private val context: Context) {
@@ -70,6 +72,7 @@ class SettingsRepository(private val context: Context) {
         val QUIET_END = intPreferencesKey("quiet_end_min")
         val BRIEFING_ENABLED = booleanPreferencesKey("briefing_enabled")
         val BRIEFING_TIME = intPreferencesKey("briefing_min_of_day")
+        val BRIEFING_GEN = intPreferencesKey("briefing_generation")
     }
 
     val settings: Flow<MaxSettings> = context.dataStore.data.map { p -> snapshot(p) }
@@ -96,6 +99,7 @@ class SettingsRepository(private val context: Context) {
             p[K.QUIET_END] = n.quietEndMin
             p[K.BRIEFING_ENABLED] = n.briefingEnabled
             p[K.BRIEFING_TIME] = n.briefingMinOfDay
+            p[K.BRIEFING_GEN] = n.briefingGeneration
         }
     }
 
@@ -118,6 +122,7 @@ class SettingsRepository(private val context: Context) {
         quietStartMin = p[K.QUIET_START] ?: 22 * 60,
         quietEndMin = p[K.QUIET_END] ?: 7 * 60,
         briefingEnabled = p[K.BRIEFING_ENABLED] ?: false,
-        briefingMinOfDay = p[K.BRIEFING_TIME] ?: 8 * 60
+        briefingMinOfDay = p[K.BRIEFING_TIME] ?: 8 * 60,
+        briefingGeneration = p[K.BRIEFING_GEN] ?: 0
     )
 }
