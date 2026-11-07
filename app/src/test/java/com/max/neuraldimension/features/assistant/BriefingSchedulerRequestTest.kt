@@ -19,7 +19,7 @@ class BriefingSchedulerRequestTest {
     @Test
     fun request_carries_generation_tag_and_delay() {
         val req = BriefingScheduler.buildRequest(7, 60_000)
-        assertEquals(7, req.inputData.getInt(BriefingScheduler.KEY_GENERATION, -1))
+        assertEquals(7, req.workSpec.input.getInt(BriefingScheduler.KEY_GENERATION, -1))
         assertTrue(req.tags.contains(BriefingScheduler.UNIQUE_WORK))
         assertEquals(60_000L, req.workSpec.initialDelay)
     }
@@ -35,6 +35,6 @@ class BriefingSchedulerRequestTest {
         // A request built without the key must never match a stored generation
         // (which starts at 0), so legacy/unknown work is always treated as stale.
         val req = androidx.work.OneTimeWorkRequestBuilder<BriefingWorker>().build()
-        assertEquals(-1, req.inputData.getInt(BriefingScheduler.KEY_GENERATION, -1))
+        assertEquals(-1, req.workSpec.input.getInt(BriefingScheduler.KEY_GENERATION, -1))
     }
 }
