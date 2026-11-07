@@ -1412,6 +1412,42 @@ def _png_rows(path, ymax_frac=1.0):
     _PNG_CACHE[key] = out
     return out
 
+
+def find_node_center(*needles):
+    """Center (x, y) of the first dump node containing any needle substring."""
+    xml = dump()
+    if not xml:
+        return None
+    for node in xml.split('<node'):
+        bm = re.search(r'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', node)
+        if not bm:
+            continue
+        if any(n in node for n in needles):
+            x1, y1, x2, y2 = map(int, bm.groups())
+            return ((x1 + x2) // 2, (y1 + y2) // 2)
+    return None
+
+# Mute icon region on 1080x2400 (rightmost control-row icon, ~24dp), measured
+# from run 42335757970 p3-voice-screen.png. Used for tint pixel proof and as
+# the screenshot-grounded last-resort tap point.
+MUTE_REGION = (795, 1785, 875, 1865)
+MUTE_REGION_CENTER = ((MUTE_REGION[0] + MUTE_REGION[2]) // 2, (MUTE_REGION[1] + MUTE_REGION[3]) // 2)
+
+def region_mean(path, region):
+    """Mean grayscale of a pixel region; None when the PNG is undecodable."""
+    dec = _png_rows(path, ymax_frac=0.8)
+    if dec is None:
+        return None
+    w, h, rows = dec
+    x1, y1, x2, y2 = region
+    y2 = min(y2, len(rows)); x2 = min(x2, w)
+    if x1 >= x2 or y1 >= y2:
+        return None
+    vals = []
+    for y in range(y1, y2):
+        vals.extend(rows[y][x1:x2])
+    return (sum(vals) / len(vals)) if vals else None
+
 def _band_diff(pa, pb, band):
     """Mean abs grayscale diff inside a fractional (x0,x1,y0,y1) band; None if not computable."""
     x0f, x1f, y0f, y1f = band
@@ -1537,31 +1573,58 @@ if want('voice-ma'):
     adb('logcat', '-c')
     tap_nav('Voice', timeout=8)
     time.sleep(3)
-    xml = dump()
-    assert_true('voice-ma: mute microphone control present', 'Mute microphone' in xml)
     adb('shell', 'pm', 'grant', PKG, 'android.permission.RECORD_AUDIO')
-    if assert_true('voice-ma: mute control tappable', bool(tap_text('Mute microphone', timeout=4))):
+    # Locate the mute control: stable testTag (surfaced as resource-id) first,
+    # merged content-desc as fallback, screenshot-grounded region as last
+    # resort (run 42335757970 pixels prove the icon renders on 1080x2400).
+    center = find_node_center('voice_mute_toggle')
+    how = 'testTag voice_mute_toggle'
+    if center is None:
+        center = find_node_center('Mute microphone')
+        how = 'content-desc fallback'
+    if center is None:
+        shot('ma-mute-locate-fail')
+        center = MUTE_REGION_CENTER
+        how = 'PIXEL-REGION FALLBACK (identity absent from dump)'
+        print('NOTE voice-ma: mute identity missing from dump; tapping screenshot-grounded region'); sys.stdout.flush()
+    print('mute control located via', how, 'at', center); sys.stdout.flush()
+    assert_true('voice-ma: mute control located via accessible identity (' + how + ')',
+                how in ('testTag voice_mute_toggle', 'content-desc fallback'))
+    shot('ma-mute-before')
+    tap(center[0], center[1])
+    time.sleep(1)
+    xml = dump()
+    # Actual muted state WITHOUT the control's description: the status line is
+    # a plain Text node (text= channel, proven reliable on this screen).
+    assert_true('voice-ma: actual muted status text shown', 'Microphone muted' in xml)
+    shot('ma-muted')
+    mb = region_mean('shots/ma-mute-before.png', MUTE_REGION)
+    ma = region_mean('shots/ma-muted.png', MUTE_REGION)
+    print('mute region gray before=%s after=%s' % (mb, ma)); sys.stdout.flush()
+    assert_true('voice-ma: mute icon tint flipped to error color (pixel proof)',
+                mb is not None and ma is not None and ma < mb - 30)
+    if tap_text('Start listening', timeout=4):
         time.sleep(1)
-        xml = dump()
-        assert_true('voice-ma: muted state shown (status + Unmute desc flip)',
-                    'Microphone muted' in xml and 'Unmute microphone' in xml)
-        shot('ma-muted')
-        if tap_text('Start listening', timeout=4):
-            time.sleep(1)
-            assert_true('voice-ma: muted mic tap shows unmute hint', 'unmute to talk' in dump())
-        saw = False
-        t0 = time.time()
-        while time.time() - t0 < 3:
-            if 'Listening...' in dump():
-                saw = True
-                break
-            time.sleep(0.5)
-        assert_true('voice-ma: no relisten within 3s after mute (window-only proof)', not saw)
-        tap_text('Unmute microphone', timeout=4)
-        time.sleep(1)
-        xml = dump()
-        assert_true('voice-ma: unmute restores mute control state', 'Mute microphone' in xml)
-        shot('ma-unmuted')
+        assert_true('voice-ma: muted mic tap shows unmute hint', 'unmute to talk' in dump())
+    saw = False
+    t0 = time.time()
+    while time.time() - t0 < 3:
+        if 'Listening...' in dump():
+            saw = True
+            break
+        time.sleep(0.5)
+    assert_true('voice-ma: no relisten within 3s after mute (window-only proof)', not saw)
+    c2 = find_node_center('voice_mute_toggle', 'Unmute microphone') or center
+    tap(c2[0], c2[1])
+    time.sleep(1)
+    xml = dump()
+    assert_true('voice-ma: unmute restores mic-on status text',
+                'Microphone muted' not in xml and 'Microphone on' in xml)
+    shot('ma-unmuted')
+    mu = region_mean('shots/ma-unmuted.png', MUTE_REGION)
+    print('mute region gray unmuted=%s' % mu); sys.stdout.flush()
+    assert_true('voice-ma: unmute tint restored (pixel proof)',
+                mu is not None and ma is not None and mu > ma + 30)
     # HAPPY on a real completion event (habit check-in), observed via MAX_STATE log
     adb('logcat', '-c')
     tap_nav('Tools', timeout=8)

@@ -48,6 +48,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -85,8 +88,17 @@ fun VoiceScreen(vm: AppViewModel) {
     var muted by remember { mutableStateOf(false) }
     var micLevel by remember { mutableFloatStateOf(0f) }
 
+    // Poll RobotState.mode into composition ONLY when it actually changes: an
+    // idle screen must not recompose on a 500ms timer (the window never goes
+    // idle, starving uiautomator's waitForIdle during verification). Active
+    // listening/speaking updates run on their own loops below, untouched.
     LaunchedEffect(Unit) {
-        while (true) { tick++; delay(500) }
+        var last = RobotState.mode
+        while (true) {
+            delay(500)
+            val now = RobotState.mode
+            if (now != last) { last = now; tick++ }
+        }
     }
     // Live mic activity indicator: samples the recognizer rms pulse while listening.
     LaunchedEffect(listening) {
@@ -152,7 +164,7 @@ fun VoiceScreen(vm: AppViewModel) {
         }
     }
 
-    Column(Modifier.fillMaxSize().background(NdBlack).statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(NdBlack).statusBarsPadding().semantics { testTagsAsResourceId = true }) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("LIVE WITH ${settings.assistantName}", color = NdLavender, fontSize = 13.sp, letterSpacing = 2.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.weight(1f))
@@ -270,7 +282,7 @@ fun VoiceScreen(vm: AppViewModel) {
                 Icon(Icons.Default.Stop, contentDescription = "Interrupt MAX", tint = NdError, modifier = Modifier.size(26.dp))
             }
             Spacer(Modifier.width(18.dp))
-            IconButton(onClick = {
+            IconButton(modifier = Modifier.testTag("voice_mute_toggle"), onClick = {
                 muted = !muted
                 if (muted) {
                     vm.voice.stopListening()
