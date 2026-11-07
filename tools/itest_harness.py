@@ -39,7 +39,7 @@ def setup_shims():
         os.remove(adb)
     os.symlink(os.path.join(ND, 'tools', 'fake_adb.py'), adb)
     with open(os.path.join(BIN, 'curl'), 'w') as f:
-        f.write('#!/bin/sh\nwhile [ $# -gt 0 ]; do\n  case "$1" in\n    -o) echo fake-apk-bytes > "$2"; shift 2;;\n    *) shift;;\n  esac\ndone\nexit 0\n')
+        f.write('#!/bin/sh\nout=\nwhile [ $# -gt 0 ]; do\n  case "$1" in\n    -o) out="$2"; shift 2;;\n    *) shift;;\n  esac\ndone\nif [ -n "$out" ]; then echo fake-apk-bytes > "$out"; else echo \'{"ok":true,"provider":"gemini"}\'; fi\nexit 0\n')
     os.chmod(os.path.join(BIN, 'curl'), 0o755)
 
 def run_scenario(name, sections, mutant=None, extra_env=None):
@@ -376,6 +376,22 @@ if want_run('T14'):
         'NOTIFY-EVIDENCE NotificationRecord pkg=com.max.neuraldimension' in r['out']
         and 'MAX Reminder: nd-test-reminder' in r['out'],
         [l for l in r['out'].splitlines() if 'NOTIFY' in l][:5])
+
+# ---- T15: chat-real flow (fake real-backend): health gate, masked-token seed
+# path, one-message PONG assert. Mask check itself is real-emulator-only. ----
+if want_run('T15'):
+  r = run_scenario('T15-chat-real', 'chat-real',
+                   extra_env={'ND_REAL_URL': 'https://max-neural-dimension-backend.dryzicfirex.workers.dev',
+                              'ND_APP_TOKEN': 'fake-token'})
+  check('T15 rc=0', r['rc'] == 0, 'rc=%d dur=%.0fs' % (r['rc'], r['dur']))
+  check('T15 health gate ran before any chat',
+        'BACKEND-HEALTH ok: backend reachable and app token accepted (no provider call made)' in r['out'], '')
+  check('T15 token seeded via masked-field path',
+        'seed app token set (masked field; value never printed)' in r['out']
+        and 'fake-token' not in r['out'], '')
+  check('T15 real reply assert PASSes',
+        'PASS chat-real: real backend reply rendered (PONG)' in r['out'],
+        [l for l in r['out'].splitlines() if 'chat-real' in l][:4])
 
 ok = all(c['ok'] for c in results['checks'])
 print('ITEST-RESULT: %s (%d/%d checks passed)' % ('ALL-PASS' if ok else 'FAILURES',

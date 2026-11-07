@@ -7,6 +7,10 @@ on:
         description: 'Comma list: all,migration,core,regen,rename,edit,attachments,conv2,incognito,delete,errors,upgrade,weather,habits,remind,device,studio,voice3,tail (smoke gate always runs)'
         required: false
         default: 'all'
+      real_backend_url:
+        description: 'chat-real mode: live backend URL (non-secret). Empty = seeded .invalid URL (default honest-state path)'
+        required: false
+        default: ''
       build_type:
         description: 'debug (hook+mock, dev loop) or release (actual candidate: hook-free, HTTPS-only, no mock)'
         required: false
@@ -100,6 +104,8 @@ jobs:
           ND_TEST_BACKEND_URL: ${{ inputs.build_type == 'debug' && 'http://10.0.2.2:8787' || '' }}
           ND_TEST_APP_TOKEN: ${{ inputs.build_type == 'debug' && 'ci-mock-token' || '' }}
           ND_RELEASE_GATE: ${{ inputs.build_type == 'release' && '1' || '0' }}
+          ND_REAL_URL: ${{ inputs.real_backend_url }}
+          ND_APP_TOKEN: ${{ secrets.ND_APP_TOKEN_TMP }}
           ND_SECTIONS: ${{ inputs.sections || 'all' }}
           BUILD_TYPE: ${{ inputs.build_type }}
         with:

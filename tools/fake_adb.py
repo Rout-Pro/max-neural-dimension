@@ -194,6 +194,8 @@ def stack(s, scr):
         add('SECURE BACKEND', dy=80)
         add('Backend URL (HTTPS only)', dy=55)
         n.append(Node(text=s['settings']['backendUrl'], cls='android.widget.EditText', y=y)); y += 80
+        add('App token (shared with your backend, not an AI key)', dy=55)
+        n.append(Node(text=s['settings']['appToken'], cls='android.widget.EditText', y=y)); y += 80
         add('Test connection', dy=70)
         add('Speech rate', dy=60)
         add('Voice', dy=60)
@@ -319,7 +321,8 @@ def do_tap(s, px, py):
         if key is None and s['screen'] == 'settings':
             # field doc coords: name 375, assistant 510, url 725
             docy = nd.y + s.get('scroll', {}).get('settings', 0)
-            key = 'settings:name' if docy < 450 else 'settings:assistant' if docy < 650 else 'settings:url'
+            key = ('settings:name' if docy < 450 else 'settings:assistant' if docy < 650
+                   else 'settings:url' if docy < 810 else 'settings:token')
         if key is None and s['screen'] == 'studio' and s['editor'] is not None:
             key = 'editor'
         s['focused'] = key
@@ -350,7 +353,8 @@ def do_tap(s, px, py):
                     s['current_conv'] = msg[:38] or 'New conversation'
                     s['conversations'][s['current_conv']] = []
                 s['conversations'][s['current_conv']].append({'role': 'user', 'text': msg})
-                reply = ('Secure backend is not connected yet' if not s['settings']['backendUrl']
+                reply = ('PONG' if 'workers.dev' in s['settings']['backendUrl']
+                         else 'Secure backend is not connected yet' if not s['settings']['backendUrl']
                          else 'Request failed')
                 s['conversations'][s['current_conv']].append({'role': 'assistant', 'text': reply})
     elif scr == 'tools':
@@ -553,7 +557,7 @@ def main():
                 if s['focused'] and s['ime']:
                     if s['focused'].startswith('settings:'):
                         k = {'settings:name': 'userName', 'settings:url': 'backendUrl',
-                             'settings:assistant': 'assistantName'}[s['focused']]
+                             'settings:assistant': 'assistantName', 'settings:token': 'appToken'}[s['focused']]
                         s['settings'][k] = s['settings'][k] + ch
                     else:
                         s['fields'][s['focused']] = s['fields'].get(s['focused'], '') + ch
@@ -567,7 +571,7 @@ def main():
                     elif s['focused']:
                         if s['focused'].startswith('settings:'):
                             k = {'settings:name': 'userName', 'settings:url': 'backendUrl',
-                                 'settings:assistant': 'assistantName'}[s['focused']]
+                                 'settings:assistant': 'assistantName', 'settings:token': 'appToken'}[s['focused']]
                             s['settings'][k] = ''
                         else:
                             s['fields'][s['focused']] = ''

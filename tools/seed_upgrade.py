@@ -18,6 +18,12 @@ Failure discipline:
 """
 import subprocess, time, sys, re, os
 
+REAL_URL = os.environ.get('ND_REAL_URL', '').strip()
+APP_TOKEN = os.environ.get('ND_APP_TOKEN', '').strip()
+FAKE = bool(os.environ.get('ND_FAKE_STATE'))
+SEED_URL = REAL_URL or 'https://seed-settings-v1.invalid'
+URL_MARK = 'workers.dev' if REAL_URL else 'seed-settings-v1'
+
 PKG = 'com.max.neuraldimension'
 
 def sh(*args):
@@ -331,14 +337,49 @@ if tap_field_below('Backend URL'):
         fail_shot('seed-url-notcleared')
         print('SEED-RESULT: task=%s msg=%s name=%s url=False (url field not verifiably empty)' % (task_ok, msg_ok, name_ok), flush=True)
         sys.exit(1)
-    type_text('https://seed-settings-v1.invalid')
+    type_text(SEED_URL)
     time.sleep(1)
     dismiss_keyboard()
-    url_ok = 'seed-settings-v1' in dump()
+    url_ok = URL_MARK in dump()
 if not url_ok:
     fail_shot('seed-url-fail')
 
+token_ok = None
+if REAL_URL:
+    # chat-real mode: seed the real app token through the MASKED Settings field.
+    # Guard: type a dummy first and require it to be INVISIBLE in dumps (masked
+    # field); fail fast before the real token is ever typed if it is not.
+    token_ok = False
+    if tap_field_below('App token'):
+        time.sleep(1)
+        if not clear_field_verified('App token'):
+            fail_shot('seed-token-notcleared')
+            print('SEED-RESULT: task=%s msg=%s name=%s url=%s token=False (token field not verifiably empty)' % (task_ok, msg_ok, name_ok, url_ok), flush=True)
+            sys.exit(1)
+        type_text('ND-MASK-CHECK-DUMMY')
+        time.sleep(1)
+        dismiss_keyboard()
+        if FAKE:
+            print('seed token mask check skipped (fake adb)', flush=True)
+        else:
+            if 'ND-MASK-CHECK-DUMMY' in dump():
+                fail_shot('seed-token-mask-fail')
+                print('SEED-RESULT: TOKEN-MASK-FAIL (dummy token visible in dump; real token never typed)', flush=True)
+                sys.exit(1)
+            print('seed token field masked in dump: true', flush=True)
+        if not tap_field_below('App token') or not clear_field_verified('App token'):
+            fail_shot('seed-token-notcleared2')
+            sys.exit(1)
+        if not APP_TOKEN:
+            print('SEED-RESULT: TOKEN-MISSING (ND_APP_TOKEN env empty)', flush=True)
+            sys.exit(1)
+        type_text(APP_TOKEN)  # value is never printed/logged
+        time.sleep(1)
+        dismiss_keyboard()
+        token_ok = True
+        print('seed app token set (masked field; value never printed)', flush=True)
+
 time.sleep(3)  # let async DataStore writes land before install -r
 ok = task_ok and msg_ok and name_ok and url_ok
-print('SEED-RESULT: task=%s msg=%s name=%s url=%s' % (task_ok, msg_ok, name_ok, url_ok), flush=True)
+print('SEED-RESULT: task=%s msg=%s name=%s url=%s%s' % (task_ok, msg_ok, name_ok, url_ok, ' token=%s' % token_ok if token_ok is not None else ''), flush=True)
 sys.exit(0 if ok else 1)

@@ -455,7 +455,11 @@ assert_text('Provider', xml)
 tap_text('Close', exact=True)
 time.sleep(1)
 
-# Chat: send a message; with no key configured the app must show the honest setup card
+# Chat: send a message; with no key configured the app must show the honest setup card.
+# chat-real mode (ND_REAL_URL set): ONE short synthetic message against the real
+# backend - the single authorized provider call; no retries on 429/auth/quota.
+REAL_URL = os.environ.get('ND_REAL_URL', '').strip()
+CHAT_MSG = 'Reply with exactly: PONG' if REAL_URL else 'Hello MAX'
 tap_nav('Chat')
 time.sleep(3)
 xml = dump()
@@ -465,14 +469,14 @@ for attempt in range(2):
     if not tap_text('Message', timeout=6):
         continue
     time.sleep(1)
-    type_text('Hello MAX')
+    type_text(CHAT_MSG)
     time.sleep(1)
     # verify the text actually landed in the field before sending
     nodes = parse_nodes(dump())
     edits = [n for n in nodes if 'EditText' in n['cls']]
     got = edits[-1]['text'] if edits else ''
     print('chat field len after typing:', len(got)); sys.stdout.flush()
-    if 'Hello MAX' in got:
+    if CHAT_MSG in got:
         if tap_text('Send', timeout=3):
             sent = True
             break
@@ -539,6 +543,23 @@ if BACKEND_TEST and want('core'):
             type_text('Say MAX online')
             time.sleep(1)
             tap_text('Send', timeout=3)
+elif REAL_URL:
+    # The ONE authorized real-backend text message: bounded poll for the reply.
+    _ok = False
+    _dl = time.time() + 90
+    while time.time() < _dl:
+        time.sleep(5)
+        _x = dump()
+        if 'PONG' in _x:
+            _ok = True
+            break
+        if 'Request failed' in _x:
+            break
+    shot('p7-chat-real')
+    _x = dump()
+    print('chat-real: reply rendered=%s request_failed=%s setup_card=%s'
+          % ('PONG' in _x, 'Request failed' in _x, 'Secure backend is not connected yet' in _x)); sys.stdout.flush()
+    assert_true('chat-real: real backend reply rendered (PONG)', _ok and 'Request failed' not in _x)
 elif not BACKEND_TEST:
     shot('04-chat-setup-honest')
     xml = dump()

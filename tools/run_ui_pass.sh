@@ -8,6 +8,17 @@ set -euo pipefail
 
 mkdir -p shots
 
+# chat-real mode: verify the live backend accepts the app token BEFORE any
+# provider call happens. Backend auth check only - /v1/health never calls the
+# provider. Stop cheap and early on failure.
+if [ -n "${ND_REAL_URL:-}" ]; then
+  if ! curl -sf -m 20 -H "Authorization: Bearer ${ND_APP_TOKEN:-}" "$ND_REAL_URL/v1/health" | grep -q '"ok":true'; then
+    echo 'BACKEND-HEALTH FAIL: backend unreachable or token rejected - stopping before any provider call'
+    exit 1
+  fi
+  echo 'BACKEND-HEALTH ok: backend reachable and app token accepted (no provider call made)'
+fi
+
 # Migration/update gate: seed the DELIVERED v2.0.1, then upgrade in place.
 curl -sL -o /tmp/old.apk https://github.com/Rout-Pro/max-neural-dimension/releases/download/v2.0.1/NeuralDimension-2.0.1.apk
 adb install /tmp/old.apk
