@@ -20,7 +20,7 @@ class TimeChangeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
         if (action != Intent.ACTION_TIMEZONE_CHANGED &&
-            action != Intent.ACTION_TIME_SET &&
+            action != Intent.ACTION_TIME_CHANGED &&
             action != Intent.ACTION_DATE_CHANGED
         ) return
         val pending = goAsync()
