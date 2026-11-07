@@ -4,3 +4,6 @@ app/build/
 local.properties
 *.iml
 .idea/
+
+# local harness/CI screenshot output
+shots/
