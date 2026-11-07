@@ -32,14 +32,28 @@ def shot(name):
     if w < 240 or h < 240:
         assert_true('artifact size gate: shot %s is a valid-sized frame (got %sx%s)' % (name, w, h), False)
 
+LAST_DUMP = {'ok': False, 'path': '/tmp/ui.xml'}
+
 def dump(path='/tmp/ui.xml'):
     for _ in range(3):
-        adb('shell', 'uiautomator', 'dump', '/sdcard/ui.xml')
-        subprocess.run(['adb', 'pull', '/sdcard/ui.xml', path], capture_output=True)
+        r = adb('shell', 'uiautomator', 'dump', '/sdcard/ui.xml')
+        err = (r.stderr or '').strip()
+        if err:
+            print('dump stderr:', err[:160]); sys.stdout.flush()
+        p = subprocess.run(['adb', 'pull', '/sdcard/ui.xml', path], capture_output=True, text=True)
         try:
-            return open(path, encoding='utf-8', errors='ignore').read()
+            data = open(path, encoding='utf-8', errors='ignore').read()
+            LAST_DUMP['ok'] = True
+            return data
         except FileNotFoundError:
+            print('dump retry: pull failed:', (p.stderr or '').strip()[:120]); sys.stdout.flush()
             time.sleep(2)
+    # An empty result is NOT evidence a node is missing: idle-starved dumps
+    # (uiautomator needs 500ms of window quiet; the Voice screen recomposes
+    # every 500ms) return '' here. Log loudly so FAILs stay classifiable.
+    print('DUMP-EMPTY: uiautomator dump failed 3x (idle starvation or null root); a missing-string FAIL right after this is a dump failure, not UI evidence')
+    sys.stdout.flush()
+    LAST_DUMP['ok'] = False
     return ''
 
 def tap(x, y):
@@ -334,6 +348,20 @@ def assert_true(label, ok):
     print(('PASS ' if ok else 'FAIL ') + label); sys.stdout.flush()
     if not ok:
         FAILED_ASSERTIONS.append(label)
+        # Diagnostic hygiene: preserve the raw UI hierarchy (app screens only,
+        # no secrets) so dump-content FAILs are classifiable after the run.
+        try:
+            if os.path.exists(LAST_DUMP['path']):
+                with open(LAST_DUMP['path'], encoding='utf-8', errors='ignore') as f:
+                    data = f.read()
+                if data:
+                    dst = 'shots/dump-fail-%02d.xml' % len(FAILED_ASSERTIONS)
+                    with open(dst, 'w', encoding='utf-8') as f:
+                        f.write(data)
+                    freshness = 'current read' if LAST_DUMP['ok'] else 'LAST SUCCESSFUL dump (current dump returned empty)'
+                    print('saved raw dump ->', dst, '[' + freshness + ']'); sys.stdout.flush()
+        except Exception as e:
+            print('dump preservation skipped:', e); sys.stdout.flush()
     return ok
 
 def assert_text(t, xml):
