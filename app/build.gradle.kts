@@ -54,4 +54,5 @@ dependencies {
     // JVM device-free migration/scheduler-construction tests (no emulator).
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.work:work-testing:2.9.1")
 }
