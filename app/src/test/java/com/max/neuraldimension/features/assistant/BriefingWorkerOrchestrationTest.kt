@@ -193,8 +193,17 @@ class BriefingWorkerOrchestrationTest {
         // The chained link carries the same live generation: firing it posts again.
         val pending = pendingBriefing()
         assertEquals(1, pending.size)
+        // Same notification id means the second post REPLACES the first (count stays 1),
+        // so prove the second post by changing the seeded payload first.
+        runBlocking(Dispatchers.IO) { db.taskDao().insert(TaskItem(title = "c")) }
         firePending(pending[0])
-        assertEquals(2, notifications().size)
+        val posted2 = notifications()
+        assertEquals(1, posted2.size)
+        val text2 = posted2[0].extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+        assertTrue("second post did not run: $text2", text2.startsWith("3 open tasks - next reminder: call mom in "))
+        val successor = pendingBriefing()
+        assertEquals(1, successor.size)
+        assertTrue(successor[0].id != pending[0].id)
     }
 
     @Test
@@ -229,16 +238,19 @@ class BriefingWorkerOrchestrationTest {
         runBlocking { BriefingScheduler.reconcile(context) }
         val pending = pendingBriefing()
         assertEquals(1, pending.size)
+        runBlocking(Dispatchers.IO) { db.taskDao().insert(TaskItem(title = "a")) }
         firePending(pending[0])
-        assertEquals(1, notifications().size)
         // Regression for the dropped-chain bug: the running worker must have
         // re-armed exactly one live successor through the real WorkManager path.
+        assertEquals("1 open task", notifications().single().extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
         val successor = pendingBriefing()
         assertEquals(1, successor.size)
         assertTrue(successor[0].id != pending[0].id)
-        // Second successive completion: fires, posts, and again leaves exactly one successor.
+        // Second successive completion: the same notification id replaces the first
+        // post (count stays 1), so prove the second post via a changed payload.
+        runBlocking(Dispatchers.IO) { db.taskDao().insert(TaskItem(title = "b")) }
         firePending(successor[0])
-        assertEquals(2, notifications().size)
+        assertEquals("2 open tasks", notifications().single().extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
         val successor2 = pendingBriefing()
         assertEquals(1, successor2.size)
         assertTrue(successor2[0].id != successor[0].id)
