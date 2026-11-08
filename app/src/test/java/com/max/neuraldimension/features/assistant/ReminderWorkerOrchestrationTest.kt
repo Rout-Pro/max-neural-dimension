@@ -19,6 +19,7 @@ import com.max.neuraldimension.data.db.AppDb
 import com.max.neuraldimension.data.db.Reminder
 import com.max.neuraldimension.data.prefs.MaxSettings
 import com.max.neuraldimension.data.prefs.SettingsRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -52,7 +53,7 @@ class ReminderWorkerOrchestrationTest {
         )
         wm = WorkManager.getInstance(context)
         db = AppDb.get(context)
-        runBlocking { db.clearAllTables() }
+        runBlocking(Dispatchers.IO) { db.clearAllTables() }
         repo = SettingsRepository(context)
         val main = Intent(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_LAUNCHER)
@@ -70,7 +71,7 @@ class ReminderWorkerOrchestrationTest {
 
     private fun setSettings(s: MaxSettings) = runBlocking { repo.update { s } }
 
-    private fun runReminderWorker(id: Long, title: String): ListenableWorker.Result = runBlocking {
+    private fun runReminderWorker(id: Long, title: String): ListenableWorker.Result = runBlocking(Dispatchers.IO) {
         TestListenableWorkerBuilder<ReminderWorker>(context)
             .setInputData(
                 Data.Builder()
@@ -101,13 +102,13 @@ class ReminderWorkerOrchestrationTest {
             )
         )
         val requestedAt = System.currentTimeMillis()
-        val id = runBlocking { db.reminderDao().insert(Reminder(title = "call mom", triggerAt = requestedAt, workId = "old-work")) }
+        val id = runBlocking(Dispatchers.IO) { db.reminderDao().insert(Reminder(title = "call mom", triggerAt = requestedAt, workId = "old-work")) }
 
         val result = runReminderWorker(id, "call mom")
 
         assertTrue(result is ListenableWorker.Result.Success)
         assertEquals(0, notifications().size)
-        val row = runBlocking { db.reminderDao().reminders().first() }.single()
+        val row = runBlocking(Dispatchers.IO) { db.reminderDao().reminders().first() }.single()
         assertEquals(requestedAt, row.triggerAt) // user-requested time preserved
         assertTrue(!row.fired)
         assertNotEquals("old-work", row.workId)
@@ -124,7 +125,7 @@ class ReminderWorkerOrchestrationTest {
     fun normal_delivery_posts_and_marks_fired_without_touching_deferral() {
         setSettings(MaxSettings())
         val requestedAt = System.currentTimeMillis()
-        val id = runBlocking { db.reminderDao().insert(Reminder(title = "standup", triggerAt = requestedAt)) }
+        val id = runBlocking(Dispatchers.IO) { db.reminderDao().insert(Reminder(title = "standup", triggerAt = requestedAt)) }
 
         val result = runReminderWorker(id, "standup")
 
@@ -133,7 +134,7 @@ class ReminderWorkerOrchestrationTest {
         assertEquals(1, posted.size)
         assertEquals("MAX Reminder", posted[0].extras.getCharSequence(Notification.EXTRA_TITLE)?.toString())
         assertEquals("standup", posted[0].extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
-        val row = runBlocking { db.reminderDao().reminders().first() }.single()
+        val row = runBlocking(Dispatchers.IO) { db.reminderDao().reminders().first() }.single()
         assertTrue(row.fired)
         assertEquals(0L, row.deferredUntil)
         assertEquals(requestedAt, row.triggerAt)

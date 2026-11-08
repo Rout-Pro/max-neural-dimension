@@ -20,6 +20,7 @@ import com.max.neuraldimension.data.db.Reminder
 import com.max.neuraldimension.data.db.TaskItem
 import com.max.neuraldimension.data.prefs.MaxSettings
 import com.max.neuraldimension.data.prefs.SettingsRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -60,7 +61,7 @@ class BriefingWorkerOrchestrationTest {
         )
         wm = WorkManager.getInstance(context)
         db = AppDb.get(context)
-        runBlocking { db.clearAllTables() }
+        runBlocking(Dispatchers.IO) { db.clearAllTables() }
         repo = SettingsRepository(context)
         // Give getLaunchIntentForPackage a target so PendingIntent construction runs the production path.
         val main = Intent(Intent.ACTION_MAIN)
@@ -84,7 +85,7 @@ class BriefingWorkerOrchestrationTest {
 
     private fun setSettings(s: MaxSettings) = runBlocking { repo.update { s } }
 
-    private fun runWorker(generation: Int): ListenableWorker.Result = runBlocking {
+    private fun runWorker(generation: Int): ListenableWorker.Result = runBlocking(Dispatchers.IO) {
         TestListenableWorkerBuilder<BriefingWorker>(context)
             .setInputData(Data.Builder().putInt(BriefingScheduler.KEY_GENERATION, generation).build())
             .build().doWork()
@@ -150,7 +151,7 @@ class BriefingWorkerOrchestrationTest {
     @Test
     fun normal_fire_posts_briefing_from_room_data_and_chains_live_link() {
         setSettings(MaxSettings(briefingEnabled = true, briefingGeneration = 0))
-        runBlocking {
+        runBlocking(Dispatchers.IO) {
             db.taskDao().insert(TaskItem(title = "a"))
             db.taskDao().insert(TaskItem(title = "b"))
             db.reminderDao().insert(Reminder(title = "call mom", triggerAt = System.currentTimeMillis() + 45 * 60_000))
