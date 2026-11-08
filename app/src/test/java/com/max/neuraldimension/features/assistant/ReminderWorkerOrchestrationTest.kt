@@ -83,7 +83,7 @@ class ReminderWorkerOrchestrationTest {
 
     private fun notifications(): List<Notification> =
         shadowOf(context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-            .allNotifications.map { it.notification }
+            .allNotifications
 
     private fun pendingReminders(): List<WorkInfo> =
         wm.getWorkInfosByTag("nd-reminder").get().filter { it.state == WorkInfo.State.ENQUEUED }

@@ -96,7 +96,7 @@ class BriefingWorkerOrchestrationTest {
 
     private fun notifications(): List<Notification> =
         shadowOf(context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-            .allNotifications.map { it.notification }
+            .allNotifications
 
     private fun firePending(wi: WorkInfo) {
         WorkManagerTestInitHelper.getTestDriver(context)!!.setInitialDelayMet(wi.id)
