@@ -31,6 +31,16 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 
+// Surface full assertion detail (expected/actual) in CI logs for failing JVM tests.
+tasks.withType<Test> {
+    testLogging {
+        events("FAILED")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showCauses = true
+        showStackTraces = true
+    }
+}
+
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.activity:activity-compose:1.10.0")

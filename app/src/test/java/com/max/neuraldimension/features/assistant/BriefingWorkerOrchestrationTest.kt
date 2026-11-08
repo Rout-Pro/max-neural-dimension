@@ -99,8 +99,24 @@ class BriefingWorkerOrchestrationTest {
         shadowOf(context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
             .allNotifications
 
+    /**
+     * Fire via TestDriver, then wait for the work to reach a terminal state:
+     * CoroutineWorker dispatches doWork onto Dispatchers.Default, so execution
+     * completes asynchronously even with the synchronous WM executor.
+     */
     private fun firePending(wi: WorkInfo) {
         WorkManagerTestInitHelper.getTestDriver(context)!!.setInitialDelayMet(wi.id)
+        awaitTerminal(wi.id)
+    }
+
+    private fun awaitTerminal(id: java.util.UUID) {
+        val deadline = System.currentTimeMillis() + 10_000
+        while (System.currentTimeMillis() < deadline) {
+            val state = wm.getWorkInfoById(id).get()?.state
+            if (state != null && state.isFinished) return
+            Thread.sleep(50)
+        }
+        throw AssertionError("work " + id + " did not reach a terminal state in 10s")
     }
 
     /** Quiet window covering "now": now-30min .. now+30min local (wrap-safe by construction). */
