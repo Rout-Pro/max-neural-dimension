@@ -30,8 +30,18 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.robolectric.Shadows.shadowOf
 import java.util.TimeZone
+
+/** Guarded one-time test WorkManager init: static WM state persists across test classes in one sandbox. */
+private fun initTestWorkManager(context: Context) {
+    if (!WorkManager.isInitialized()) {
+        WorkManagerTestInitHelper.initializeTestWorkManager(
+            context, Configuration.Builder().setExecutor(SynchronousExecutor()).build()
+        )
+    }
+}
 
 /**
  * Orchestration tests: run the REAL BriefingWorker.doWork against a synchronous
@@ -44,6 +54,7 @@ import java.util.TimeZone
  * No production seam: each test fully overwrites settings and wipes Room tables.
  */
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class BriefingWorkerOrchestrationTest {
 
     private lateinit var context: Context
@@ -56,10 +67,10 @@ class BriefingWorkerOrchestrationTest {
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
         defaultZone = TimeZone.getDefault()
-        WorkManagerTestInitHelper.initializeTestWorkManager(
-            context, Configuration.Builder().setExecutor(SynchronousExecutor()).build()
-        )
+        initTestWorkManager(context)
         wm = WorkManager.getInstance(context)
+        // Isolate from any work leaked by other test classes sharing the sandbox.
+        wm.cancelAllWorkByTag(BriefingScheduler.TAG).result.get()
         db = AppDb.get(context)
         runBlocking(Dispatchers.IO) { db.clearAllTables() }
         repo = SettingsRepository(context)
@@ -92,7 +103,7 @@ class BriefingWorkerOrchestrationTest {
     }
 
     private fun pendingBriefing(): List<WorkInfo> =
-        wm.getWorkInfosForUniqueWork(BriefingScheduler.UNIQUE_WORK).get()
+        wm.getWorkInfosByTag(BriefingScheduler.TAG).get()
             .filter { it.state == WorkInfo.State.ENQUEUED }
 
     private fun notifications(): List<Notification> =
@@ -221,10 +232,32 @@ class BriefingWorkerOrchestrationTest {
         firePending(pending[0])
         assertEquals(1, notifications().size)
         // Regression for the dropped-chain bug: the running worker must have
-        // re-armed a live successor through the real WorkManager path.
+        // re-armed exactly one live successor through the real WorkManager path.
         val successor = pendingBriefing()
         assertEquals(1, successor.size)
         assertTrue(successor[0].id != pending[0].id)
+        // Second successive completion: fires, posts, and again leaves exactly one successor.
+        firePending(successor[0])
+        assertEquals(2, notifications().size)
+        val successor2 = pendingBriefing()
+        assertEquals(1, successor2.size)
+        assertTrue(successor2[0].id != successor[0].id)
+    }
+
+    @Test
+    fun chain_first_then_reconcile_cancels_stale_link_and_replaces() {
+        setSettings(MaxSettings(briefingEnabled = true, briefingMinOfDay = 8 * 60, briefingGeneration = 0))
+        runBlocking { BriefingScheduler.reconcile(context) } // generation 1, one pending link
+        // A worker finishes and chains BEFORE the user's reconcile arrives:
+        runBlocking { BriefingScheduler.chain(context, 1, 60_000) }
+        assertEquals(2, pendingBriefing().size) // transient: original + chained link
+        // User retime: reconcile bumps to generation 2, cancels all tagged, enqueues fresh:
+        setSettings(MaxSettings(briefingEnabled = true, briefingMinOfDay = 9 * 60, briefingGeneration = 1))
+        runBlocking { BriefingScheduler.reconcile(context) }
+        val pending = pendingBriefing()
+        assertEquals(1, pending.size)
+        firePending(pending[0])
+        assertEquals(1, notifications().size) // only the generation-2 work is live
     }
 
     @Test

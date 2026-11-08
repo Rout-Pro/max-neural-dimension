@@ -29,6 +29,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.robolectric.Shadows.shadowOf
 
 /**
@@ -38,6 +39,7 @@ import org.robolectric.Shadows.shadowOf
  * and marks fired.
  */
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class ReminderWorkerOrchestrationTest {
 
     private lateinit var context: Context
@@ -48,10 +50,13 @@ class ReminderWorkerOrchestrationTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        WorkManagerTestInitHelper.initializeTestWorkManager(
-            context, Configuration.Builder().setExecutor(SynchronousExecutor()).build()
-        )
+        if (!WorkManager.isInitialized()) {
+            WorkManagerTestInitHelper.initializeTestWorkManager(
+                context, Configuration.Builder().setExecutor(SynchronousExecutor()).build()
+            )
+        }
         wm = WorkManager.getInstance(context)
+        wm.cancelAllWorkByTag("nd-reminder").result.get()
         db = AppDb.get(context)
         runBlocking(Dispatchers.IO) { db.clearAllTables() }
         repo = SettingsRepository(context)

@@ -8,7 +8,6 @@ import android.content.Intent
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.Data
-import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequest
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -16,7 +15,9 @@ import androidx.work.WorkerParameters
 import com.max.neuraldimension.data.db.AppDb
 import com.max.neuraldimension.data.db.Reminder
 import com.max.neuraldimension.data.prefs.SettingsRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
@@ -69,22 +70,28 @@ object BriefingBuilder {
  * Single serialized entry point for every briefing schedule change (settings
  * toggle, time change, timezone/time-set broadcast, app cold start).
  *
- * Race design: ALL mutations of the unique work - reconcile AND chain - are
- * serialized through [scheduleMutex] (single-process app: receiver, workers and
- * UI all run in the default process). Reconcile bumps the DataStore generation
- * and REPLACEs under the lock; chain re-reads the generation under the same
- * lock and REPLACEs only when its own generation is still current. Both
- * interleavings resolve correctly: reconcile-first -> a stale chain sees the
- * bumped generation and enqueues nothing; chain-first -> the reconcile that
- * follows REPLACEs the just-enqueued link with the user's new schedule. REPLACE
- * (not KEEP) is required for the legitimate self-rearm: WorkManager counts the
- * still-RUNNING worker as existing uncompleted work, so a KEEP chain from
- * inside doWork is silently dropped and the daily chain would die after the
- * first fire. Each request also carries its generation, so even a link that
- * outlives its schedule no-ops at fire time.
+ * Race design: chain links are NON-unique one-shots tagged [TAG], and ALL
+ * schedule mutations - reconcile and chain - complete their WorkManager
+ * operations (blocking on each Operation) inside [scheduleMutex], so the
+ * generation check, cancel and enqueue finish within the serialization
+ * boundary in a single order (single-process app: receiver, workers and UI
+ * share the default process).
+ *
+ * - reconcile: bump the DataStore generation, cancel every tagged link, then
+ *   (when enabled) enqueue the fresh link - all under the lock.
+ * - chain (from inside a running worker): re-read the generation under the
+ *   lock and enqueue only when still current.
+ *
+ * Interleavings: reconcile-first -> the stale chain sees the bumped generation
+ * and enqueues nothing; chain-first -> reconcile's cancel-by-tag removes the
+ * just-enqueued stale link. Non-unique links are required: WorkManager counts
+ * a still-RUNNING worker as existing uncompleted work (KEEP drops a self-chain)
+ * and REPLACE cancels the running instance mid-doWork (self-cancellation).
+ * Each request also carries its generation, so a link that outlives its
+ * schedule no-ops at fire time.
  */
 object BriefingScheduler {
-    const val UNIQUE_WORK = "nd-briefing"
+    const val TAG = "nd-briefing"
     const val KEY_GENERATION = "briefing_generation"
 
     private val scheduleMutex = kotlinx.coroutines.sync.Mutex()
@@ -92,18 +99,17 @@ object BriefingScheduler {
     suspend fun reconcile(context: Context) {
         val app = context.applicationContext
         val repo = SettingsRepository(app)
-        scheduleMutex.withLock {
-            repo.update { it.copy(briefingGeneration = it.briefingGeneration + 1) }
-            val s = repo.settings.first()
-            if (!s.briefingEnabled) {
-                WorkManager.getInstance(app).cancelUniqueWork(UNIQUE_WORK)
-                return
+        withContext(Dispatchers.IO) {
+            scheduleMutex.withLock {
+                repo.update { it.copy(briefingGeneration = it.briefingGeneration + 1) }
+                val s = repo.settings.first()
+                val wm = WorkManager.getInstance(app)
+                wm.cancelAllWorkByTag(TAG).result.get()
+                if (!s.briefingEnabled) return@withContext
+                val now = System.currentTimeMillis()
+                val delay = QuietHours.nextOccurrenceMillis(now, s.briefingMinOfDay, ZoneId.systemDefault()) - now
+                wm.enqueue(buildRequest(s.briefingGeneration, delay)).result.get()
             }
-            val now = System.currentTimeMillis()
-            val delay = QuietHours.nextOccurrenceMillis(now, s.briefingMinOfDay, ZoneId.systemDefault()) - now
-            WorkManager.getInstance(app).enqueueUniqueWork(
-                UNIQUE_WORK, ExistingWorkPolicy.REPLACE, buildRequest(s.briefingGeneration, delay)
-            )
         }
     }
 
@@ -111,24 +117,23 @@ object BriefingScheduler {
         OneTimeWorkRequestBuilder<BriefingWorker>()
             .setInitialDelay(delayMillis.coerceAtLeast(0), TimeUnit.MILLISECONDS)
             .setInputData(Data.Builder().putInt(KEY_GENERATION, generation).build())
-            .addTag(UNIQUE_WORK)
+            .addTag(TAG)
             .build()
 
     /**
-     * Chain continuation from inside a running worker. Serialized with
-     * [reconcile] and re-reads the generation under the mutex: a superseded
-     * worker enqueues nothing; a legitimate running worker's successor always
-     * lands (REPLACE).
+     * Chain continuation from inside a running worker: re-reads the generation
+     * under the mutex and enqueues (blocking until stored) only when still
+     * current.
      */
     suspend fun chain(context: Context, generation: Int, delayMillis: Long) {
         val app = context.applicationContext
         val repo = SettingsRepository(app)
-        scheduleMutex.withLock {
-            val s = repo.settings.first()
-            if (!s.briefingEnabled || s.briefingGeneration != generation) return
-            WorkManager.getInstance(app).enqueueUniqueWork(
-                UNIQUE_WORK, ExistingWorkPolicy.REPLACE, buildRequest(generation, delayMillis)
-            )
+        withContext(Dispatchers.IO) {
+            scheduleMutex.withLock {
+                val s = repo.settings.first()
+                if (!s.briefingEnabled || s.briefingGeneration != generation) return@withContext
+                WorkManager.getInstance(app).enqueue(buildRequest(generation, delayMillis)).result.get()
+            }
         }
     }
 }

@@ -20,7 +20,7 @@ class BriefingSchedulerRequestTest {
     fun request_carries_generation_tag_and_delay() {
         val req = BriefingScheduler.buildRequest(7, 60_000)
         assertEquals(7, req.workSpec.input.getInt(BriefingScheduler.KEY_GENERATION, -1))
-        assertTrue(req.tags.contains(BriefingScheduler.UNIQUE_WORK))
+        assertTrue(req.tags.contains(BriefingScheduler.TAG))
         assertEquals(60_000L, req.workSpec.initialDelay)
     }
 
