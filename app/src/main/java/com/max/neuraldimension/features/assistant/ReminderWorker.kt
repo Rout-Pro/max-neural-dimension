@@ -60,17 +60,21 @@ class ReminderWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         )
         val launch = applicationContext.packageManager.getLaunchIntentForPackage(applicationContext.packageName)
             ?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP) }
-        val pi = PendingIntent.getActivity(
-            applicationContext, reminderId.toInt(), launch,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notif = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_popup_reminder)
             .setContentTitle("MAX Reminder")
             .setContentText(title)
             .setAutoCancel(true)
-            .setContentIntent(pi)
-            .build()
+        // No launch intent (unusual device state): post without a tap action
+        // rather than crashing the worker or inventing a fallback destination.
+        if (launch != null) {
+            val pi = PendingIntent.getActivity(
+                applicationContext, reminderId.toInt(), launch,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.setContentIntent(pi)
+        }
+        val notif = builder.build()
         try {
             nm.notify(NOTIF_BASE + reminderId.toInt(), notif)
         } catch (se: SecurityException) {

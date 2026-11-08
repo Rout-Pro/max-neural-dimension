@@ -187,11 +187,12 @@ class BriefingWorkerOrchestrationTest {
     }
 
     @Test
-    fun keep_invariant_stale_chain_link_cannot_displace_fresher_schedule() {
+    fun stale_chain_link_cannot_displace_fresher_schedule() {
         setSettings(MaxSettings(briefingEnabled = true, briefingGeneration = 0))
         runBlocking { BriefingScheduler.reconcile(context) } // generation 1, pending work gen=1
-        // A late stale worker tries to chain with the old generation via KEEP:
-        BriefingScheduler.chain(context, 0, 60_000)
+        // A late stale worker tries to chain with the old generation:
+        // the mutex-serialized chain re-reads the generation and must skip.
+        runBlocking { BriefingScheduler.chain(context, 0, 60_000) }
         val pending = pendingBriefing()
         assertEquals(1, pending.size)
         // If KEEP held, the pending work is the gen=1 schedule: firing it posts.
@@ -217,6 +218,27 @@ class BriefingWorkerOrchestrationTest {
         runBlocking { BriefingScheduler.reconcile(context) }
         val pending = pendingBriefing()
         assertEquals(1, pending.size)
+        firePending(pending[0])
+        assertEquals(1, notifications().size)
+        // Regression for the dropped-chain bug: the running worker must have
+        // re-armed a live successor through the real WorkManager path.
+        val successor = pendingBriefing()
+        assertEquals(1, successor.size)
+        assertTrue(successor[0].id != pending[0].id)
+    }
+
+    @Test
+    fun stale_chain_after_user_retime_cannot_overwrite_newer_schedule() {
+        setSettings(MaxSettings(briefingEnabled = true, briefingMinOfDay = 8 * 60, briefingGeneration = 0))
+        runBlocking { BriefingScheduler.reconcile(context) } // generation 1
+        // User changes the time: reconcile bumps to generation 2 and replaces.
+        setSettings(MaxSettings(briefingEnabled = true, briefingMinOfDay = 9 * 60, briefingGeneration = 1))
+        runBlocking { BriefingScheduler.reconcile(context) }
+        // A stale running worker from the generation-1 era now tries to re-arm:
+        runBlocking { BriefingScheduler.chain(context, 1, 60_000) }
+        val pending = pendingBriefing()
+        assertEquals(1, pending.size)
+        // Pending work must still be the generation-2 schedule: firing it posts.
         firePending(pending[0])
         assertEquals(1, notifications().size)
     }

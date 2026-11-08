@@ -17,6 +17,7 @@ import com.max.neuraldimension.data.db.AppDb
 import com.max.neuraldimension.data.db.Reminder
 import com.max.neuraldimension.data.prefs.SettingsRepository
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.withLock
 import java.time.ZoneId
 import java.util.concurrent.TimeUnit
 
@@ -68,32 +69,42 @@ object BriefingBuilder {
  * Single serialized entry point for every briefing schedule change (settings
  * toggle, time change, timezone/time-set broadcast, app cold start).
  *
- * Race design: every reconcile bumps [com.max.neuraldimension.data.prefs.MaxSettings.briefingGeneration]
- * inside the atomic DataStore update, then REPLACEs (or cancels) the unique work.
- * Each enqueued request carries its generation; [BriefingWorker] no-ops when its
- * generation no longer matches the stored one, so work enqueued before the user's
- * latest choice can never post or re-arm over it. Chain links use KEEP (never
- * REPLACE), so a late-finishing stale worker cannot kill a fresher pending
- * schedule; the worst residue is one pending link that no-ops at fire time.
+ * Race design: ALL mutations of the unique work - reconcile AND chain - are
+ * serialized through [scheduleMutex] (single-process app: receiver, workers and
+ * UI all run in the default process). Reconcile bumps the DataStore generation
+ * and REPLACEs under the lock; chain re-reads the generation under the same
+ * lock and REPLACEs only when its own generation is still current. Both
+ * interleavings resolve correctly: reconcile-first -> a stale chain sees the
+ * bumped generation and enqueues nothing; chain-first -> the reconcile that
+ * follows REPLACEs the just-enqueued link with the user's new schedule. REPLACE
+ * (not KEEP) is required for the legitimate self-rearm: WorkManager counts the
+ * still-RUNNING worker as existing uncompleted work, so a KEEP chain from
+ * inside doWork is silently dropped and the daily chain would die after the
+ * first fire. Each request also carries its generation, so even a link that
+ * outlives its schedule no-ops at fire time.
  */
 object BriefingScheduler {
     const val UNIQUE_WORK = "nd-briefing"
     const val KEY_GENERATION = "briefing_generation"
 
+    private val scheduleMutex = kotlinx.coroutines.sync.Mutex()
+
     suspend fun reconcile(context: Context) {
         val app = context.applicationContext
         val repo = SettingsRepository(app)
-        repo.update { it.copy(briefingGeneration = it.briefingGeneration + 1) }
-        val s = repo.settings.first()
-        if (!s.briefingEnabled) {
-            WorkManager.getInstance(app).cancelUniqueWork(UNIQUE_WORK)
-            return
+        scheduleMutex.withLock {
+            repo.update { it.copy(briefingGeneration = it.briefingGeneration + 1) }
+            val s = repo.settings.first()
+            if (!s.briefingEnabled) {
+                WorkManager.getInstance(app).cancelUniqueWork(UNIQUE_WORK)
+                return
+            }
+            val now = System.currentTimeMillis()
+            val delay = QuietHours.nextOccurrenceMillis(now, s.briefingMinOfDay, ZoneId.systemDefault()) - now
+            WorkManager.getInstance(app).enqueueUniqueWork(
+                UNIQUE_WORK, ExistingWorkPolicy.REPLACE, buildRequest(s.briefingGeneration, delay)
+            )
         }
-        val now = System.currentTimeMillis()
-        val delay = QuietHours.nextOccurrenceMillis(now, s.briefingMinOfDay, ZoneId.systemDefault()) - now
-        WorkManager.getInstance(app).enqueueUniqueWork(
-            UNIQUE_WORK, ExistingWorkPolicy.REPLACE, buildRequest(s.briefingGeneration, delay)
-        )
     }
 
     fun buildRequest(generation: Int, delayMillis: Long): OneTimeWorkRequest =
@@ -103,11 +114,22 @@ object BriefingScheduler {
             .addTag(UNIQUE_WORK)
             .build()
 
-    /** Chain continuation. KEEP: a fresher pending schedule always wins. */
-    fun chain(context: Context, generation: Int, delayMillis: Long) {
-        WorkManager.getInstance(context.applicationContext).enqueueUniqueWork(
-            UNIQUE_WORK, ExistingWorkPolicy.KEEP, buildRequest(generation, delayMillis)
-        )
+    /**
+     * Chain continuation from inside a running worker. Serialized with
+     * [reconcile] and re-reads the generation under the mutex: a superseded
+     * worker enqueues nothing; a legitimate running worker's successor always
+     * lands (REPLACE).
+     */
+    suspend fun chain(context: Context, generation: Int, delayMillis: Long) {
+        val app = context.applicationContext
+        val repo = SettingsRepository(app)
+        scheduleMutex.withLock {
+            val s = repo.settings.first()
+            if (!s.briefingEnabled || s.briefingGeneration != generation) return
+            WorkManager.getInstance(app).enqueueUniqueWork(
+                UNIQUE_WORK, ExistingWorkPolicy.REPLACE, buildRequest(generation, delayMillis)
+            )
+        }
     }
 }
 
@@ -152,17 +174,21 @@ class BriefingWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         )
         val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
             ?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP) }
-        val pi = PendingIntent.getActivity(
-            context, 0, launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val notif = NotificationCompat.Builder(context, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("MAX daily briefing")
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setAutoCancel(true)
-            .setContentIntent(pi)
-            .build()
+        // No launch intent (unusual device state): post without a tap action
+        // rather than crashing the worker or inventing a fallback destination.
+        if (launch != null) {
+            val pi = PendingIntent.getActivity(
+                context, 0, launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.setContentIntent(pi)
+        }
+        val notif = builder.build()
         try {
             nm.notify(NOTIF_ID, notif)
         } catch (se: SecurityException) {
