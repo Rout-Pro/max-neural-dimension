@@ -64,6 +64,8 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    // Robolectric compose tests: contributes the ComponentActivity manifest entry the compose rule launches. Debug/test-only.
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.mockito:mockito-core:5.14.2")
     // JVM device-free migration/scheduler-construction tests (no emulator).
