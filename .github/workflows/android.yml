@@ -54,10 +54,42 @@ jobs:
         run: |
           echo "$ND_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/nd.keystore"
           APKSIGNER=$(ls "$ANDROID_HOME/build-tools/"*/apksigner | sort -V | tail -1)
-          "$APKSIGNER" sign --ks "$RUNNER_TEMP/nd.keystore" --ks-pass "pass:$ND_KEYSTORE_PASSWORD" --ks-key-alias "$ND_KEY_ALIAS" --key-pass "pass:$ND_KEY_PASSWORD" --out app/build/outputs/apk/release/NeuralDimension-2.0.apk app/build/outputs/apk/release/app-release-unsigned.apk
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          echo "signing NeuralDimension-${VERSION}.apk"
+          "$APKSIGNER" sign --ks "$RUNNER_TEMP/nd.keystore" --ks-pass "pass:$ND_KEYSTORE_PASSWORD" --ks-key-alias "$ND_KEY_ALIAS" --key-pass "pass:$ND_KEY_PASSWORD" --out "app/build/outputs/apk/release/NeuralDimension-${VERSION}.apk" app/build/outputs/apk/release/app-release-unsigned.apk
           rm -f "$RUNNER_TEMP/nd.keystore"
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: neuraldimension-apk
-          path: app/build/outputs/apk/release/NeuralDimension-2.0.apk
+          path: app/build/outputs/apk/release/NeuralDimension-*.apk
+
+  byte-equality:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download signed APK
+        uses: actions/download-artifact@v4
+        with:
+          name: neuraldimension-apk
+          path: apk/
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install on API 34 emulator and assert byte equality
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          # One line invoking a checked-in bash file: the runner splits multi-line
+          # scripts into separate sh -c calls with no cross-line state.
+          script: bash tools/verify_byte_equality.sh
