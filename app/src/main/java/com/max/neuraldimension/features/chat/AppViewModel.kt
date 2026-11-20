@@ -20,6 +20,7 @@ import com.max.neuraldimension.domain.BackendClient
 import com.max.neuraldimension.domain.AiException
 import com.max.neuraldimension.domain.ChatTurn
 import com.max.neuraldimension.domain.PinLock
+import com.max.neuraldimension.domain.Backup
 import com.max.neuraldimension.features.voice.VoiceEngine
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -187,6 +188,95 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         incognito.value = false
         lockState.value = false
         lockError.value = null
+    }
+
+    /** One-line result of the last backup/restore action, shown in Settings. */
+    val backupStatus = MutableStateFlow<String?>(null)
+
+    /**
+     * Blueprint Part 19: export reminders, memories and user-facing settings to
+     * a JSON file in app-private storage (filesDir/backups). Auth state (backend
+     * URL/token, PIN) is never exported. Reads stores fresh so no StateFlow
+     * timing is involved. Returns the created file.
+     */
+    suspend fun exportBackup(): java.io.File {
+        val cur = settingsRepo.settings.first()
+        val payload = Backup.Payload(
+            exportedAt = System.currentTimeMillis(),
+            settings = cur,
+            memories = cur.memories.toList(),
+            reminders = db.reminderDao().reminders().first()
+        )
+        val dir = java.io.File(getApplication<Application>().filesDir, "backups").apply { mkdirs() }
+        val f = java.io.File(dir, "max-backup-${payload.exportedAt}.json")
+        f.writeText(Backup.encode(payload))
+        return f
+    }
+
+    /** Newest backup file in app storage, if any. */
+    fun latestBackupFile(): java.io.File? =
+        java.io.File(getApplication<Application>().filesDir, "backups").listFiles()
+            ?.filter { it.name.startsWith("max-backup-") && it.name.endsWith(".json") }
+            ?.maxByOrNull { it.lastModified() }
+
+    data class ImportSummary(val memories: Int, val reminders: Int, val scheduled: Int)
+
+    /**
+     * Validates and applies a backup document. Validation fully completes before
+     * anything is written, so a malformed file changes nothing. Settings fields
+     * are restored onto the current settings (backend URL/token, PIN and briefing
+     * generation preserved); memories are replaced by the backup's set; imported
+     * reminders are ADDED to existing ones, and future unfired ones are scheduled
+     * with WorkManager exactly like addReminder.
+     */
+    suspend fun importBackup(text: String): ImportSummary {
+        val p = Backup.decode(text) // throws BackupFormatException before any write
+        settingsRepo.update {
+            it.copy(
+                userName = p.settings.userName,
+                assistantName = p.settings.assistantName,
+                thinkingMode = p.settings.thinkingMode,
+                personality = p.settings.personality,
+                customPersonality = p.settings.customPersonality,
+                speechRate = p.settings.speechRate,
+                language = p.settings.language,
+                voiceName = p.settings.voiceName,
+                animIntensity = p.settings.animIntensity,
+                reducedMotion = p.settings.reducedMotion,
+                memories = p.memories.toSet(),
+                quietHoursEnabled = p.settings.quietHoursEnabled,
+                quietStartMin = p.settings.quietStartMin,
+                quietEndMin = p.settings.quietEndMin,
+                briefingEnabled = p.settings.briefingEnabled,
+                briefingMinOfDay = p.settings.briefingMinOfDay
+            )
+        }
+        val app = getApplication<Application>()
+        val now = System.currentTimeMillis()
+        var scheduled = 0
+        p.reminders.forEach { r ->
+            val id = db.reminderDao().insert(r.copy(workId = ""))
+            if (!r.fired && r.triggerAt > now) {
+                runCatching {
+                    val data = androidx.work.Data.Builder()
+                        .putLong(com.max.neuraldimension.features.assistant.ReminderWorker.KEY_ID, id)
+                        .putString(com.max.neuraldimension.features.assistant.ReminderWorker.KEY_TITLE, r.title)
+                        .build()
+                    val work = androidx.work.OneTimeWorkRequestBuilder<com.max.neuraldimension.features.assistant.ReminderWorker>()
+                        .setInitialDelay(r.triggerAt - now, TimeUnit.MILLISECONDS)
+                        .setInputData(data)
+                        .addTag("nd-reminder")
+                        .build()
+                    androidx.work.WorkManager.getInstance(app).enqueue(work)
+                    db.reminderDao().update(
+                        Reminder(id = id, title = r.title, triggerAt = r.triggerAt,
+                            workId = work.id.toString(), fired = r.fired, deferredUntil = r.deferredUntil)
+                    )
+                    scheduled++
+                }
+            }
+        }
+        return ImportSummary(p.memories.size, p.reminders.size, scheduled)
     }
 
     init {

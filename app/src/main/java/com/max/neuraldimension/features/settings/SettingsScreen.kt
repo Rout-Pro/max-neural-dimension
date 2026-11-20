@@ -340,6 +340,55 @@ fun SettingsScreen(vm: AppViewModel) {
             }
         }
 
+        Section("Backup") {
+            val backupStatus by vm.backupStatus.collectAsState()
+            val latestBackup = remember { mutableStateOf(vm.latestBackupFile()?.name) }
+            var showImport by remember { mutableStateOf(false) }
+            Text("Reminders, memories and settings saved as one JSON file in app storage. Backend sign-in and your PIN are never exported.", color = NdMuted, fontSize = 11.sp)
+            Row {
+                TextButton(onClick = {
+                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        val msg = runCatching { vm.exportBackup() }.fold(
+                            onSuccess = { "Saved ${it.name}" },
+                            onFailure = { "Export failed: ${it.message ?: "unknown error"}" }
+                        )
+                        vm.backupStatus.value = msg
+                        latestBackup.value = vm.latestBackupFile()?.name
+                    }
+                }) { Text("Export backup", color = NdNeon) }
+                if (latestBackup.value != null) {
+                    TextButton(onClick = { showImport = true }) { Text("Restore", color = NdNeon) }
+                }
+            }
+            latestBackup.value?.let {
+                Text("Latest backup: $it", color = NdMuted, fontSize = 11.sp)
+            }
+            backupStatus?.let { Text(it, color = NdSilver, fontSize = 11.sp) }
+            if (showImport) {
+                AlertDialog(
+                    onDismissRequest = { showImport = false },
+                    title = { Text("Restore backup?") },
+                    text = { Text("Settings and memories are replaced by the backup. Imported reminders are added to your existing ones; future ones are scheduled again.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showImport = false
+                            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                val msg = runCatching {
+                                    val f = vm.latestBackupFile() ?: throw IllegalStateException("no backup file found")
+                                    val sum = vm.importBackup(f.readText())
+                                    "Restored settings, ${sum.memories} memories, ${sum.reminders} reminders (${sum.scheduled} scheduled)"
+                                }.fold(onSuccess = { it }, onFailure = { "Restore failed: ${it.message ?: "invalid backup"}" })
+                                vm.backupStatus.value = msg
+                            }
+                        }) { Text("Restore", color = NdNeon) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showImport = false }) { Text("Cancel") }
+                    }
+                )
+            }
+        }
+
         Section("Permissions") {
             val context = LocalContext.current
             val perms = remember { mutableStateOf(PermissionDashboard.entries(context)) }
