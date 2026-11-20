@@ -56,6 +56,9 @@ object Backup {
         sj.put("quietEndMin", s.quietEndMin)
         sj.put("briefingEnabled", s.briefingEnabled)
         sj.put("briefingMinOfDay", s.briefingMinOfDay)
+        sj.put("mouthAnimation", s.mouthAnimation)
+        sj.put("holoPanels", s.holoPanels)
+        sj.put("robotAccent", s.robotAccent)
         root.put("settings", sj)
         val ma = JSONArray()
         p.memories.forEach { ma.put(it) }
@@ -119,7 +122,12 @@ object Backup {
             quietStartMin = qStart,
             quietEndMin = qEnd,
             briefingEnabled = sj.reqBool("briefingEnabled"),
-            briefingMinOfDay = bMin
+            briefingMinOfDay = bMin,
+            // Added after v1 shipped: optional on decode so older backup files
+            // still restore, falling back to the same defaults as a fresh install.
+            mouthAnimation = sj.optBoolOr("mouthAnimation", true),
+            holoPanels = sj.optBoolOr("holoPanels", true),
+            robotAccent = sj.optStringOr("robotAccent", "violet")
         )
 
         val ma = root.optJSONArray("memories") ?: throw BackupFormatException("missing memories")
@@ -180,5 +188,17 @@ object Backup {
         val v = opt(k)
         if (v !is Number) throw BackupFormatException("missing or invalid '$k'")
         return v.toDouble()
+    }
+
+    private fun JSONObject.optBoolOr(k: String, def: Boolean): Boolean {
+        val v = opt(k) ?: return def
+        if (v !is Boolean) throw BackupFormatException("invalid '$k'")
+        return v
+    }
+
+    private fun JSONObject.optStringOr(k: String, def: String): String {
+        val v = opt(k) ?: return def
+        if (v !is String) throw BackupFormatException("invalid '$k'")
+        return v
     }
 }

@@ -54,7 +54,13 @@ data class MaxSettings(
     /** Consecutive failed unlock attempts; reset on success. Drives progressive lockout (PinLock.backoffDelayMillis). */
     val pinFailCount: Int = 0,
     /** Timestamp of the most recent failed unlock attempt; 0 = none. */
-    val pinLastFailAt: Long = 0L
+    val pinLastFailAt: Long = 0L,
+    /** Blueprint Part 20: lip-sync mouth animation while speaking. */
+    val mouthAnimation: Boolean = true,
+    /** Blueprint Part 20: holographic dashboard panels on the home screen. */
+    val holoPanels: Boolean = true,
+    /** Blueprint Part 20: robot accent preset: violet | cyan | amber. */
+    val robotAccent: String = "violet"
 )
 
 class SettingsRepository(private val context: Context) {
@@ -83,6 +89,9 @@ class SettingsRepository(private val context: Context) {
         val PIN_VERIFIER = stringPreferencesKey("pin_verifier")
         val PIN_FAIL_COUNT = intPreferencesKey("pin_fail_count")
         val PIN_LAST_FAIL = longPreferencesKey("pin_last_fail_at")
+        val MOUTH_ANIM = booleanPreferencesKey("mouth_animation")
+        val HOLO_PANELS = booleanPreferencesKey("holo_panels")
+        val ROBOT_ACCENT = stringPreferencesKey("robot_accent")
     }
 
     val settings: Flow<MaxSettings> = context.dataStore.data.map { p -> snapshot(p) }
@@ -113,6 +122,9 @@ class SettingsRepository(private val context: Context) {
             p[K.PIN_VERIFIER] = n.pinVerifier
             p[K.PIN_FAIL_COUNT] = n.pinFailCount
             p[K.PIN_LAST_FAIL] = n.pinLastFailAt
+            p[K.MOUTH_ANIM] = n.mouthAnimation
+            p[K.HOLO_PANELS] = n.holoPanels
+            p[K.ROBOT_ACCENT] = n.robotAccent
         }
     }
 
@@ -139,6 +151,9 @@ class SettingsRepository(private val context: Context) {
         briefingGeneration = p[K.BRIEFING_GEN] ?: 0,
         pinVerifier = p[K.PIN_VERIFIER] ?: "",
         pinFailCount = p[K.PIN_FAIL_COUNT] ?: 0,
-        pinLastFailAt = p[K.PIN_LAST_FAIL] ?: 0L
+        pinLastFailAt = p[K.PIN_LAST_FAIL] ?: 0L,
+        mouthAnimation = p[K.MOUTH_ANIM] ?: true,
+        holoPanels = p[K.HOLO_PANELS] ?: true,
+        robotAccent = p[K.ROBOT_ACCENT] ?: "violet"
     )
 }

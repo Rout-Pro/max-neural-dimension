@@ -34,6 +34,13 @@ class Node(val name: String) {
 class RobotRenderer(private val context: android.content.Context) : GLSurfaceView.Renderer {
 
     companion object {
+        /** Part 20: rim-light color per robot accent preset. */
+        private val ACCENT_RIM = mapOf(
+            "violet" to floatArrayOf(0.85f, 0.72f, 1f),
+            "cyan" to floatArrayOf(0.55f, 0.95f, 1f),
+            "amber" to floatArrayOf(1f, 0.78f, 0.45f)
+        )
+
         const val VERT = """#version 300 es
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
@@ -287,7 +294,7 @@ void main() {
         val intensity = if (RobotState.reducedMotion) 0.25f else RobotState.intensity
         val mode = RobotState.mode
 
-        val targetAmp = if (mode == RobotState.Mode.SPEAKING) RobotState.mouthAmp else 0f
+        val targetAmp = if (mode == RobotState.Mode.SPEAKING && RobotState.mouthAnimation) RobotState.mouthAmp else 0f
         ampSmooth += (targetAmp - ampSmooth) * 0.45f
 
         // blink scheduling -> drives the eyes' "blink" morph weight
@@ -432,7 +439,8 @@ void main() {
             GLES30.glUniform3fv(loc(prog, "uEmissive"), 1, n.emissive, 0)
             GLES30.glUniform1f(loc(prog, "uAlpha"), n.alpha)
             GLES30.glUniform3fv(loc(prog, "uCamPos"), 1, camPos, 0)
-            GLES30.glUniform3f(loc(prog, "uRimColor"), 0.85f, 0.72f, 1f)
+            val rim = ACCENT_RIM[RobotState.accent] ?: ACCENT_RIM["violet"]!!
+            GLES30.glUniform3f(loc(prog, "uRimColor"), rim[0], rim[1], rim[2])
             GLES30.glUniform1f(loc(prog, "uMetallic"), n.metallic)
             GLES30.glUniform1f(loc(prog, "uRough"), n.rough)
             GLES30.glUniform2f(loc(prog, "uMorphW"), n.morphW[0], n.morphW[1])

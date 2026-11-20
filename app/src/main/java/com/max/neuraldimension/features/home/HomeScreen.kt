@@ -135,7 +135,8 @@ fun HomeScreen(vm: AppViewModel, onOpenChat: () -> Unit, onOpenVoice: () -> Unit
             // camera framing keeps the face in this clear zone, above the panels.
             Spacer(Modifier.weight(0.46f))
 
-            // ---- holographic panels: grid below the robot ----
+            // ---- holographic panels: grid below the robot (Part 20: user toggle) ----
+            if (settings.holoPanels) {
             Column(
                 Modifier.weight(0.54f).fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -170,6 +171,7 @@ fun HomeScreen(vm: AppViewModel, onOpenChat: () -> Unit, onOpenVoice: () -> Unit
                         PanelLine("Chats", "Local", NdMuted)
                     }
                 }
+            }
             }
 
             // ---- bottom chat input ----

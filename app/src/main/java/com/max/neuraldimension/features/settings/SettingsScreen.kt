@@ -169,6 +169,25 @@ fun SettingsScreen(vm: AppViewModel) {
                     colors = SwitchDefaults.colors(checkedTrackColor = NdViolet)
                 )
             }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Mouth animation", color = NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Switch(
+                    checked = s.mouthAnimation,
+                    onCheckedChange = { v -> scope.launch { vm.settingsRepo.update { it.copy(mouthAnimation = v) } } },
+                    colors = SwitchDefaults.colors(checkedTrackColor = NdViolet)
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Holographic panels", color = NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Switch(
+                    checked = s.holoPanels,
+                    onCheckedChange = { v -> scope.launch { vm.settingsRepo.update { it.copy(holoPanels = v) } } },
+                    colors = SwitchDefaults.colors(checkedTrackColor = NdViolet)
+                )
+            }
+            PickerRow("Accent", s.robotAccent.replaceFirstChar { it.uppercase() }, listOf("Violet", "Cyan", "Amber")) { idx ->
+                scope.launch { vm.settingsRepo.update { it.copy(robotAccent = listOf("violet", "cyan", "amber")[idx]) } }
+            }
         }
 
         Section("Memory") {
@@ -387,6 +406,24 @@ fun SettingsScreen(vm: AppViewModel) {
                     }
                 )
             }
+        }
+
+        Section("Device Health") {
+            val healthContext = LocalContext.current
+            val health by produceState<DeviceHealth.Stats?>(initialValue = null) {
+                value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    DeviceHealth.stats(healthContext)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("App data", color = NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text(health?.let { DeviceHealth.formatBytes(it.appBytes) } ?: "...", color = NdMuted, fontSize = 13.sp)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Backups", color = NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text(health?.let { "${it.backupCount} file(s)" } ?: "...", color = NdMuted, fontSize = 13.sp)
+            }
+            Text("Everything MAX stores stays in app-private storage on this device. The size above is the total of that storage, including chats, reminders and backups.", color = NdMuted, fontSize = 11.sp)
         }
 
         Section("Permissions") {

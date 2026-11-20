@@ -24,4 +24,8 @@ object RobotState {
     @Volatile var assistantName: String = "MAX"
     /** Home dashboard: frame the bust in the upper screen area so panels below never touch the face. */
     @Volatile var compactBust: Boolean = false
+    /** Part 20: lip-sync mouth animation while speaking (user setting). */
+    @Volatile var mouthAnimation: Boolean = true
+    /** Part 20: robot accent preset name (violet | cyan | amber); the renderer maps it to rim light. */
+    @Volatile var accent: String = "violet"
 }

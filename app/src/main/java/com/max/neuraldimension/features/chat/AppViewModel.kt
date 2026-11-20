@@ -248,7 +248,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 quietStartMin = p.settings.quietStartMin,
                 quietEndMin = p.settings.quietEndMin,
                 briefingEnabled = p.settings.briefingEnabled,
-                briefingMinOfDay = p.settings.briefingMinOfDay
+                briefingMinOfDay = p.settings.briefingMinOfDay,
+                mouthAnimation = p.settings.mouthAnimation,
+                holoPanels = p.settings.holoPanels,
+                robotAccent = p.settings.robotAccent
             )
         }
         val app = getApplication<Application>()
@@ -286,6 +289,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 RobotState.assistantName = s.assistantName
                 RobotState.intensity = s.animIntensity
                 RobotState.reducedMotion = s.reducedMotion
+                RobotState.mouthAnimation = s.mouthAnimation
+                RobotState.accent = s.robotAccent
                 voice.languageTag = s.language
                 voice.voiceName = s.voiceName
                 voice.applyVoice()

@@ -41,6 +41,9 @@ class BackupCodecTest {
             quietEndMin = 420,
             briefingEnabled = true,
             briefingMinOfDay = 480,
+            mouthAnimation = false,
+            holoPanels = false,
+            robotAccent = "cyan",
             backendUrl = "https://example.workers.dev",
             appToken = "SECRET-TOKEN",
             pinVerifier = "v1:120000:c2FsdA==:aGFzaA=="
@@ -73,6 +76,9 @@ class BackupCodecTest {
         assertEquals(420, s.quietEndMin)
         assertEquals(true, s.briefingEnabled)
         assertEquals(480, s.briefingMinOfDay)
+        assertEquals(false, s.mouthAnimation)
+        assertEquals(false, s.holoPanels)
+        assertEquals("cyan", s.robotAccent)
         assertEquals(p.memories, d.memories)
         assertEquals(2, d.reminders.size)
         val fut = d.reminders[0]
@@ -110,6 +116,27 @@ class BackupCodecTest {
         assertThrows(Backup.BackupFormatException::class.java) {
             Backup.decode("""{"format":"max-backup","version":2,"settings":{},"memories":[],"reminders":[]}""")
         }
+    }
+
+    @Test
+    fun v1_document_without_robot_fields_decodes_with_defaults() {
+        // Fields added after v1 shipped are optional on decode: older backup
+        // files restore with fresh-install defaults for them.
+        val doc = JSONObject(Backup.encode(sample()))
+        doc.getJSONObject("settings").apply {
+            remove("mouthAnimation")
+            remove("holoPanels")
+            remove("robotAccent")
+        }
+        val d = Backup.decode(doc.toString())
+        assertEquals(true, d.settings.mouthAnimation)
+        assertEquals(true, d.settings.holoPanels)
+        assertEquals("violet", d.settings.robotAccent)
+
+        // Wrong-typed optional fields are still rejected.
+        val bad = JSONObject(Backup.encode(sample()))
+        bad.getJSONObject("settings").put("mouthAnimation", "yes")
+        assertThrows(Backup.BackupFormatException::class.java) { Backup.decode(bad.toString()) }
     }
 
     @Test
