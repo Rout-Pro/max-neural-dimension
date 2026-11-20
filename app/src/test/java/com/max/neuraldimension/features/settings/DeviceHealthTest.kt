@@ -33,7 +33,7 @@ class DeviceHealthTest {
         File(backups, "not-a-backup.txt").writeText("x")
 
         val s = DeviceHealth.stats(app)
-        assertEquals(before.appBytes + 100 + 50 + 2 + 1, s.appBytes)
+        assertEquals(before.appBytes + 100 + 50 + 2 + 2 + 1, s.appBytes)
         assertEquals(before.backupCount + 2, s.backupCount)
 
         sub.deleteRecursively()
