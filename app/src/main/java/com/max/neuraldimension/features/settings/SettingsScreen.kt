@@ -14,6 +14,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Slider
@@ -36,6 +38,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -258,13 +261,70 @@ fun SettingsScreen(vm: AppViewModel) {
             }
         }
 
+        Section("Security") {
+            val events by vm.securityEvents.collectAsState()
+            var showSetPin by remember { mutableStateOf(false) }
+            var showRemovePin by remember { mutableStateOf(false) }
+            var removeError by remember { mutableStateOf<String?>(null) }
+            val pinSet = s.pinVerifier.isNotBlank()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("App PIN", color = NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Text(if (pinSet) "On" else "Off", color = if (pinSet) NdOk else NdMuted, fontSize = 13.sp)
+            }
+            Row {
+                TextButton(onClick = { showSetPin = true }) {
+                    Text(if (pinSet) "Change PIN" else "Set PIN", color = NdNeon)
+                }
+                if (pinSet) {
+                    TextButton(onClick = { removeError = null; showRemovePin = true }) {
+                        Text("Remove", color = NdMuted)
+                    }
+                }
+            }
+            Text(
+                "When on, MAX asks for this PIN every time the app opens. Only a salted hash is stored on this device, never the PIN itself. After repeated wrong attempts, unlock slows down.",
+                color = NdMuted, fontSize = 11.sp
+            )
+            if (events.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text("Security event history", color = NdLavender, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                events.take(10).forEach { e ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(securityEventLabel(e.type), color = NdSilver, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                        Text(formatEventTime(e.ts), color = NdMuted, fontSize = 11.sp)
+                    }
+                }
+            }
+            if (showSetPin) {
+                PinDialog(
+                    title = if (pinSet) "Change PIN" else "Set PIN",
+                    error = null,
+                    onDismiss = { showSetPin = false }
+                ) { pin ->
+                    vm.setPin(pin)
+                    showSetPin = false
+                }
+            }
+            if (showRemovePin) {
+                PinDialog(
+                    title = "Enter current PIN to remove",
+                    error = removeError,
+                    onDismiss = { showRemovePin = false }
+                ) { pin ->
+                    vm.clearPin(pin) { ok ->
+                        if (ok) { showRemovePin = false; removeError = null } else removeError = "Wrong PIN"
+                    }
+                }
+            }
+        }
+
         Section("About MAX 2.0") {
             Text("Neural Dimension - version 2.0 (Phase 1)", color = NdSilver, fontSize = 13.sp)
             Spacer(Modifier.height(6.dp))
             Text(
                 "Working now: rigged 3D robot (GLB asset with facial morph targets) with lip-synced voice, live voice conversation, " +
                     "streaming AI chat through your secure backend (keys stay server-side), chat history, tasks, memory, device tools.\n\n" +
-                    "Next phases: security lock, wake word, web development studio, " +
+                    "Next phases: wake word, web development studio, " +
                     "image/video generation (needs provider APIs on the backend), performance tiers.",
                 color = NdMuted, fontSize = 12.sp
             )
@@ -272,6 +332,46 @@ fun SettingsScreen(vm: AppViewModel) {
         Spacer(Modifier.height(60.dp))
     }
 }
+
+@Composable
+private fun PinDialog(title: String, error: String?, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var pin by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { v -> if (v.length <= 8 && v.all { it.isDigit() }) pin = v },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    visualTransformation = PasswordVisualTransformation(),
+                    placeholder = { Text("4-8 digits") },
+                    singleLine = true
+                )
+                if (error != null) Text(error, color = androidx.compose.ui.graphics.Color(0xFFFF6B81), fontSize = 12.sp)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { if (pin.length >= 4) onConfirm(pin) }) { Text("Confirm") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+private fun securityEventLabel(type: String): String = when (type) {
+    "pin_set" -> "PIN set"
+    "pin_changed" -> "PIN changed"
+    "pin_cleared" -> "PIN removed"
+    "pin_failed" -> "Failed unlock attempt"
+    "data_wiped" -> "All data erased"
+    else -> type
+}
+
+private fun formatEventTime(ts: Long): String =
+    java.text.SimpleDateFormat("dd MMM, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(ts))
 
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {

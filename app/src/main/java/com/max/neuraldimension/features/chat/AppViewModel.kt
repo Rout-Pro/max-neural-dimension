@@ -12,12 +12,14 @@ import com.max.neuraldimension.data.db.Expense
 import com.max.neuraldimension.data.db.Habit
 import com.max.neuraldimension.data.db.Note
 import com.max.neuraldimension.data.db.Reminder
+import com.max.neuraldimension.data.db.SecurityEvent
 import com.max.neuraldimension.data.db.TaskItem
 import com.max.neuraldimension.data.prefs.MaxSettings
 import com.max.neuraldimension.data.prefs.SettingsRepository
 import com.max.neuraldimension.domain.BackendClient
 import com.max.neuraldimension.domain.AiException
 import com.max.neuraldimension.domain.ChatTurn
+import com.max.neuraldimension.domain.PinLock
 import com.max.neuraldimension.features.voice.VoiceEngine
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -87,6 +89,73 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** One-shot text queued from the home input, consumed by the chat screen. */
     val pendingChatText = MutableStateFlow<String?>(null)
+
+    // ----- Blueprint Part 19: app lock + security event history -----
+
+    /** null = settings not loaded yet; true = locked (PIN set, not unlocked); false = unlocked / no PIN. */
+    val lockState = MutableStateFlow<Boolean?>(null)
+    val lockError = MutableStateFlow<String?>(null)
+
+    val securityEvents: StateFlow<List<SecurityEvent>> =
+        db.securityDao().events().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    init {
+        // Gate content on the stored PIN state before first render; a PIN set
+        // before process death still locks the next cold start.
+        viewModelScope.launch {
+            lockState.value = PinLock.isSet(settings.first().pinVerifier)
+        }
+    }
+
+    /**
+     * Attempt an unlock. Enforces the progressive lockout from the persisted
+     * failure count; a successful attempt records nothing, a failed one
+     * appends pin_failed to the security history.
+     */
+    fun unlock(pin: String) {
+        val s = settings.value
+        val waitMs = PinLock.backoffDelayMillis(s.pinFailCount) - (System.currentTimeMillis() - s.pinLastFailAt)
+        if (waitMs > 0) {
+            lockError.value = "Too many attempts. Try again in " + ((waitMs + 999) / 1000) + "s."
+            return
+        }
+        if (PinLock.verify(pin, s.pinVerifier)) {
+            lockState.value = false
+            lockError.value = null
+            if (s.pinFailCount != 0 || s.pinLastFailAt != 0L) {
+                viewModelScope.launch { settingsRepo.update { it.copy(pinFailCount = 0, pinLastFailAt = 0L) } }
+            }
+        } else {
+            lockError.value = "Wrong PIN"
+            viewModelScope.launch {
+                settingsRepo.update { it.copy(pinFailCount = it.pinFailCount + 1, pinLastFailAt = System.currentTimeMillis()) }
+                db.securityDao().insert(SecurityEvent(type = "pin_failed"))
+            }
+        }
+    }
+
+    /** Set or replace the app PIN. No-op for invalid shapes; records pin_set / pin_changed. */
+    fun setPin(pin: String) {
+        if (!PinLock.isValidPin(pin)) return
+        viewModelScope.launch {
+            val had = PinLock.isSet(settings.value.pinVerifier)
+            settingsRepo.update { it.copy(pinVerifier = PinLock.newVerifier(pin), pinFailCount = 0, pinLastFailAt = 0L) }
+            db.securityDao().insert(SecurityEvent(type = if (had) "pin_changed" else "pin_set"))
+        }
+    }
+
+    /** Remove the app PIN; requires the current PIN. Records pin_cleared on success. */
+    fun clearPin(currentPin: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            if (PinLock.verify(currentPin, settings.value.pinVerifier)) {
+                settingsRepo.update { it.copy(pinVerifier = "", pinFailCount = 0, pinLastFailAt = 0L) }
+                db.securityDao().insert(SecurityEvent(type = "pin_cleared"))
+                onResult(true)
+            } else {
+                onResult(false)
+            }
+        }
+    }
 
     init {
         voice.init()

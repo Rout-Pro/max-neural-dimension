@@ -168,6 +168,31 @@ interface ExpenseDao {
     suspend fun delete(e: Expense)
 }
 
+/**
+ * Blueprint Part 19: append-only security event history (PIN lifecycle, failed
+ * unlock attempts, data wipes). Rows are never edited, only added or wiped.
+ */
+@Entity(tableName = "security_events")
+data class SecurityEvent(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** pin_set | pin_changed | pin_cleared | pin_failed | data_wiped */
+    val type: String,
+    val ts: Long = System.currentTimeMillis(),
+    val detail: String = ""
+)
+
+@Dao
+interface SecurityDao {
+    @Query("SELECT * FROM security_events ORDER BY ts DESC, id DESC LIMIT 200")
+    fun events(): Flow<List<SecurityEvent>>
+
+    @Insert
+    suspend fun insert(e: SecurityEvent): Long
+
+    @Query("DELETE FROM security_events")
+    suspend fun clear()
+}
+
 @Dao
 interface TaskDao {
     @Query("SELECT * FROM tasks ORDER BY done ASC, createdAt DESC")
@@ -204,6 +229,12 @@ val MIGRATION_4_5 = object : Migration(4, 5) {
     }
 }
 
+val MIGRATION_5_6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS security_events (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, type TEXT NOT NULL, ts INTEGER NOT NULL, detail TEXT NOT NULL DEFAULT '')")
+    }
+}
+
 val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, text TEXT NOT NULL, createdAt INTEGER NOT NULL)")
@@ -211,7 +242,7 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
-@Database(entities = [Conversation::class, Message::class, TaskItem::class, Note::class, Reminder::class, Habit::class, Expense::class], version = 5, exportSchema = false)
+@Database(entities = [Conversation::class, Message::class, TaskItem::class, Note::class, Reminder::class, Habit::class, Expense::class, SecurityEvent::class], version = 6, exportSchema = false)
 abstract class AppDb : RoomDatabase() {
     abstract fun chatDao(): ChatDao
     abstract fun taskDao(): TaskDao
@@ -219,12 +250,13 @@ abstract class AppDb : RoomDatabase() {
     abstract fun reminderDao(): ReminderDao
     abstract fun habitDao(): HabitDao
     abstract fun expenseDao(): ExpenseDao
+    abstract fun securityDao(): SecurityDao
 
     companion object {
         @Volatile private var instance: AppDb? = null
         fun get(context: Context): AppDb = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDb::class.java, "max.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build().also { instance = it }
         }
     }

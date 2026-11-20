@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -47,7 +48,13 @@ data class MaxSettings(
     /** Briefing clock time as local minutes-of-day. */
     val briefingMinOfDay: Int = 8 * 60,
     /** Monotonic schedule generation: any briefing work carrying an older generation is stale and no-ops. Bumped by every reconcile. */
-    val briefingGeneration: Int = 0
+    val briefingGeneration: Int = 0,
+    /** Blueprint Part 19: salted PBKDF2 verifier ("v1:iterations:salt:hash"), empty = no PIN set. The PIN itself is never stored. */
+    val pinVerifier: String = "",
+    /** Consecutive failed unlock attempts; reset on success. Drives progressive lockout (PinLock.backoffDelayMillis). */
+    val pinFailCount: Int = 0,
+    /** Timestamp of the most recent failed unlock attempt; 0 = none. */
+    val pinLastFailAt: Long = 0L
 )
 
 class SettingsRepository(private val context: Context) {
@@ -73,6 +80,9 @@ class SettingsRepository(private val context: Context) {
         val BRIEFING_ENABLED = booleanPreferencesKey("briefing_enabled")
         val BRIEFING_TIME = intPreferencesKey("briefing_min_of_day")
         val BRIEFING_GEN = intPreferencesKey("briefing_generation")
+        val PIN_VERIFIER = stringPreferencesKey("pin_verifier")
+        val PIN_FAIL_COUNT = intPreferencesKey("pin_fail_count")
+        val PIN_LAST_FAIL = longPreferencesKey("pin_last_fail_at")
     }
 
     val settings: Flow<MaxSettings> = context.dataStore.data.map { p -> snapshot(p) }
@@ -100,6 +110,9 @@ class SettingsRepository(private val context: Context) {
             p[K.BRIEFING_ENABLED] = n.briefingEnabled
             p[K.BRIEFING_TIME] = n.briefingMinOfDay
             p[K.BRIEFING_GEN] = n.briefingGeneration
+            p[K.PIN_VERIFIER] = n.pinVerifier
+            p[K.PIN_FAIL_COUNT] = n.pinFailCount
+            p[K.PIN_LAST_FAIL] = n.pinLastFailAt
         }
     }
 
@@ -123,6 +136,9 @@ class SettingsRepository(private val context: Context) {
         quietEndMin = p[K.QUIET_END] ?: 7 * 60,
         briefingEnabled = p[K.BRIEFING_ENABLED] ?: false,
         briefingMinOfDay = p[K.BRIEFING_TIME] ?: 8 * 60,
-        briefingGeneration = p[K.BRIEFING_GEN] ?: 0
+        briefingGeneration = p[K.BRIEFING_GEN] ?: 0,
+        pinVerifier = p[K.PIN_VERIFIER] ?: "",
+        pinFailCount = p[K.PIN_FAIL_COUNT] ?: 0,
+        pinLastFailAt = p[K.PIN_LAST_FAIL] ?: 0L
     )
 }

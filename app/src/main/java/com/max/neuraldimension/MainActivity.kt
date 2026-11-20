@@ -21,6 +21,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,7 +78,13 @@ class MainActivity : ComponentActivity() {
             NdTheme {
                 val vm: AppViewModel = viewModel()
                 var tab by remember { mutableStateOf(Tab.HOME) }
-                Scaffold(
+                // Blueprint Part 19: when a PIN is set the app opens on the lock
+                // gate before any content; null = settings still loading (blank).
+                val lockState by vm.lockState.collectAsState()
+                when (lockState) {
+                    null -> Box(Modifier.fillMaxSize().background(NdBlack))
+                    true -> com.max.neuraldimension.features.lock.LockGate(vm)
+                    false -> Scaffold(
                     containerColor = NdBlack,
                     bottomBar = {
                         NavigationBar(containerColor = Color(0xFF0E0918)) {
@@ -115,6 +122,7 @@ class MainActivity : ComponentActivity() {
                             Tab.SETTINGS -> SettingsScreen(vm)
                         }
                     }
+                }
                 }
             }
         }
