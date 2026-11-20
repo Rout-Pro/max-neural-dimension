@@ -340,8 +340,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     conversationId = cid, role = "assistant", text = "SETUP_REQUIRED::backend")
                 if (incognito.value) incognitoMessages.value = incognitoMessages.value + setupMsg
                 else db.chatDao().insertMessage(setupMsg)
-                RobotState.mode = RobotState.Mode.CONFUSED
-                viewModelScope.launch { delay(4000); if (RobotState.mode == RobotState.Mode.CONFUSED) RobotState.mode = RobotState.Mode.IDLE }
+                pulseExpression(RobotState.Mode.CONFUSED)
                 return ""
             }
             // A user question shows CURIOUS while processing (UI animation cue
@@ -407,8 +406,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun flashError() {
-        RobotState.mode = RobotState.Mode.ERROR
-        viewModelScope.launch { delay(3500); if (RobotState.mode == RobotState.Mode.ERROR) RobotState.mode = RobotState.Mode.IDLE }
+        pulseExpression(RobotState.Mode.ERROR)
     }
 
     /** Regenerate the reply to the most recent user message in the open conversation. */
@@ -520,12 +518,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (h.lastDoneDay == today) return@launch
             val newStreak = if (h.lastDoneDay == today - 1) h.streak + 1 else 1
             db.habitDao().update(h.copy(lastDoneDay = today, streak = newStreak))
-            pulseExpression(RobotState.Mode.HAPPY, 4000)
+            // A 7-day streak milestone is a bigger moment than an ordinary check-off.
+            pulseExpression(if (newStreak > 0 && newStreak % 7 == 0) RobotState.Mode.EXCITED else RobotState.Mode.HAPPY)
         }
     }
 
-    /** Brief expression tied to a real completion event, then back to IDLE. */
-    private fun pulseExpression(mode: RobotState.Mode, ms: Long) {
+    /**
+     * Brief expression tied to a real completion event, then back to IDLE.
+     * Duration comes from the central table (RobotExpressions.decayMillis).
+     */
+    private fun pulseExpression(mode: RobotState.Mode) {
+        val ms = com.max.neuraldimension.core.gl.RobotExpressions.decayMillis(mode) ?: return
         RobotState.mode = mode
         viewModelScope.launch { delay(ms); if (RobotState.mode == mode) RobotState.mode = RobotState.Mode.IDLE }
     }
@@ -585,7 +588,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleTask(t: TaskItem) {
         viewModelScope.launch {
             db.taskDao().update(t.copy(done = !t.done))
-            if (!t.done) pulseExpression(RobotState.Mode.HAPPY, 4000)
+            if (!t.done) pulseExpression(RobotState.Mode.HAPPY)
         }
     }
 

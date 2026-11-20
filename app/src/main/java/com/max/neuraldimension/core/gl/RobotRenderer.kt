@@ -315,72 +315,26 @@ void main() {
         headGroup.rx = 0.03f * sin(t * 0.7f) * intensity
         headGroup.py = 0.32f + 0.015f * idle
 
-        ring.ry = t * 0.5f * intensity
-        var eyeScaleT = 1f
-        var eyeShiftT = 0f
-        var mouthW = ampSmooth
-        var mouthWideT = 1f
-        var tiltT = 0f
-        var pulseT = 0f
-        var smileT = 0f
-
-        when (mode) {
-            RobotState.Mode.LISTENING -> {
-                eyeScaleT = 1.18f
-                tiltT = 0.05f
-                ring.ry = t * 1.6f * intensity
-                pulseT = 0.25f + 0.2f * sin(t * 4f)
-                face.emissive = f3(0.16f, 0.07f, 0.32f)
-                // attentive gaze: eyes converge on the user in front of the screen
-                eyeShiftT = 0f
-            }
-            RobotState.Mode.THINKING -> {
-                eyeShiftT = 0.035f * sin(t * 2.4f)
-                tiltT = 0.10f
-                ring.ry = t * 2.6f * intensity
-                pulseT = 0.3f + 0.25f * sin(t * 7f)
-            }
-            RobotState.Mode.SPEAKING -> {
-                headGroup.rx += 0.045f * sin(t * 6.5f) * ampSmooth
-                pulseT = ampSmooth * 0.8f
-            }
-            RobotState.Mode.HAPPY -> {
-                // gentle smile: smile morph blended over speech-safe mouthOpen floor
-                blinkW = maxOf(blinkW, 0.38f)
-                mouthW = maxOf(mouthW, 0.55f); mouthWideT = 1.3f
-                tiltT = 0.08f
-                smileT = 0.85f
-            }
-            RobotState.Mode.EXCITED -> {
-                // bigger smile + energetic pulse and head bob (distinct from HAPPY)
-                blinkW = maxOf(blinkW, 0.38f)
-                mouthW = maxOf(mouthW, 0.65f); mouthWideT = 1.35f
-                tiltT = 0.08f
-                smileT = 1f
-                eyeScaleT = 1.15f
-                headGroup.rx += 0.05f * sin(t * 8f) * intensity
-                pulseT = 0.4f + 0.3f * sin(t * 9f)
-            }
-            RobotState.Mode.CURIOUS -> {
-                eyeScaleT = 1.12f; tiltT = 0.13f
-                eyeShiftT = 0.02f * sin(t * 1.2f)
-            }
-            RobotState.Mode.CONFUSED -> {
-                tiltT = -0.11f
-            }
-            RobotState.Mode.ERROR -> {
-                pulseT = 0.5f
-            }
-            else -> {
-                // IDLE gaze saccades: slow drift biased back to center, toward the
-                // person in front of the screen. No camera, no tracking, no new data.
-                if (t > nextSaccade) {
-                    saccadeTarget = (Random.nextFloat() - 0.5f) * 0.02f
-                    nextSaccade = t + 2.2f + Random.nextFloat() * 3.4f
-                }
-                eyeShiftT = saccadeTarget
-            }
+        val dispMode = RobotExpressions.effectiveMode(mode, RobotState.modeSince, System.currentTimeMillis())
+        // IDLE gaze saccades: slow drift biased back to center, toward the
+        // person in front of the screen. No camera, no tracking, no new data.
+        if (dispMode == RobotState.Mode.IDLE && t > nextSaccade) {
+            saccadeTarget = (Random.nextFloat() - 0.5f) * 0.02f
+            nextSaccade = t + 2.2f + Random.nextFloat() * 3.4f
         }
+        // Part 4/6: every expression target comes from the pure machine.
+        val ex = RobotExpressions.targets(dispMode, t, ampSmooth, intensity, saccadeTarget)
+        ring.ry = t * ex.ringSpeed * intensity
+        ex.faceEmissive?.let { face.emissive = it }
+        headGroup.rx += ex.headRx
+        blinkW = maxOf(blinkW, ex.blinkFloor)
+        val mouthW = maxOf(ampSmooth, ex.mouthFloor)
+        val eyeScaleT = ex.eyeScale
+        val eyeShiftT = ex.eyeShift
+        val mouthWideT = ex.mouthWide
+        val tiltT = ex.tilt
+        val pulseT = ex.pulse
+        val smileT = ex.smile
 
         eyeScaleS += (eyeScaleT - eyeScaleS) * 0.10f
         eyeShiftS += (eyeShiftT - eyeShiftS) * 0.10f
@@ -391,7 +345,7 @@ void main() {
         pulse = pulseS
         headGroup.rz += tiltS
 
-        errMix += ((if (mode == RobotState.Mode.ERROR) 1f else 0f) - errMix) * 0.12f
+        errMix += ((if (dispMode == RobotState.Mode.ERROR) 1f else 0f) - errMix) * 0.12f
         val eL = mix(f3(0.75f, 0.55f, 1.15f), f3(1.2f, 0.25f, 0.22f), errMix)
         eyeL.emissive = eL; eyeR.emissive = eL.copyOf()
         mouth.emissive = mix(f3(0.55f, 0.28f, 0.95f), f3(1.1f, 0.2f, 0.2f), errMix)
