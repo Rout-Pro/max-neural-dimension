@@ -69,7 +69,9 @@ class SettingsScreenPixelTest {
         val vm = awaitVm { !it.settings.value.quietHoursEnabled && !it.settings.value.briefingEnabled }
 
         composeRule.setContent { SettingsScreen(vm) }
-        composeRule.onNodeWithText("Quiet hours and daily briefing").performScrollTo()
+        // Scroll the LAST row that must be visible into view, not the section
+        // header - scrolling to the header leaves the toggles below the fold.
+        composeRule.onNodeWithText("Daily briefing").performScrollTo()
         composeRule.waitForIdle()
 
         captureSettings("settings_quiet_off.png")
@@ -86,7 +88,7 @@ class SettingsScreenPixelTest {
         val vm = awaitVm { it.settings.value.quietHoursEnabled }
 
         composeRule.setContent { SettingsScreen(vm) }
-        composeRule.onNodeWithText("Quiet hours and daily briefing").performScrollTo()
+        composeRule.onNodeWithText("From 22:00 to 07:00").performScrollTo()
         composeRule.waitForIdle()
 
         captureSettings("settings_quiet_on.png")
@@ -101,7 +103,7 @@ class SettingsScreenPixelTest {
         val vm = awaitVm { !it.settings.value.quietHoursEnabled && it.settings.value.briefingEnabled }
 
         composeRule.setContent { SettingsScreen(vm) }
-        composeRule.onNodeWithText("Quiet hours and daily briefing").performScrollTo()
+        composeRule.onNodeWithText("Around 08:00 each day").performScrollTo()
         composeRule.waitForIdle()
 
         captureSettings("settings_briefing_on.png")
