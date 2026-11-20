@@ -174,7 +174,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         runCatching {
             val wm = androidx.work.WorkManager.getInstance(app)
             wm.cancelAllWorkByTag("nd-reminder")
-            wm.cancelAllWorkByTag(com.max.neuraldimension.features.assistant.BriefingWorker.TAG)
+            wm.cancelAllWorkByTag(com.max.neuraldimension.features.assistant.BriefingScheduler.TAG)
         }
         db.clearAllTables()
         app.filesDir.listFiles()
