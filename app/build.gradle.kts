@@ -38,6 +38,9 @@ android {
 
 // Surface full assertion detail (expected/actual) in CI logs for failing JVM tests.
 tasks.withType<Test> {
+    // Roborazzi is integrated as library artifacts only (no Gradle plugin); without this
+    // property its task type defaults to None and every captureRoboImage is a silent no-op.
+    systemProperty("roborazzi.test.record", "true")
     testLogging {
         events("FAILED")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
