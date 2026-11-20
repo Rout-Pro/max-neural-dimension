@@ -80,7 +80,8 @@ class HoloPanelPixelTest {
         composeRule.onNodeWithText("TASKS").assertExists()
         composeRule.onNodeWithText("Linked").assertExists()
         // Panel interactions: each panel exposes a click action (expand target).
-        composeRule.onNode(hasClickAction() and hasAnyChild(hasText("AI STATUS"))).assertExists()
-        composeRule.onNode(hasClickAction() and hasAnyChild(hasText("TASKS"))).assertExists()
+        // The clickable container lives in the unmerged semantics tree.
+        composeRule.onNode(hasClickAction() and hasAnyChild(hasText("AI STATUS")), useUnmergedTree = true).assertExists()
+        composeRule.onNode(hasClickAction() and hasAnyChild(hasText("TASKS")), useUnmergedTree = true).assertExists()
     }
 }
