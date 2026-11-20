@@ -316,6 +316,50 @@ fun SettingsScreen(vm: AppViewModel) {
                     }
                 }
             }
+            var showErase by remember { mutableStateOf(false) }
+            Spacer(Modifier.height(6.dp))
+            TextButton(onClick = { showErase = true }) {
+                Text("Erase all data", color = androidx.compose.ui.graphics.Color(0xFFFF6B81), fontSize = 13.sp)
+            }
+            Text("Permanently deletes chats, tasks, notes, reminders, habits, expenses, memories and settings on this device, then records the wipe in the security history. This cannot be undone.", color = NdMuted, fontSize = 11.sp)
+            if (showErase) {
+                AlertDialog(
+                    onDismissRequest = { showErase = false },
+                    title = { Text("Erase all data?") },
+                    text = { Text("Everything MAX stores on this device will be permanently deleted: conversations, tasks, notes, reminders, habits, expenses, memories, settings and the app PIN. This cannot be undone.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            vm.eraseAllData()
+                            showErase = false
+                        }) { Text("Erase everything", color = androidx.compose.ui.graphics.Color(0xFFFF6B81)) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showErase = false }) { Text("Cancel") }
+                    }
+                )
+            }
+        }
+
+        Section("Permissions") {
+            val context = LocalContext.current
+            val perms = remember { mutableStateOf(PermissionDashboard.entries(context)) }
+            perms.value.forEach { p ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(p.label, color = NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    Text(if (p.granted) "Granted" else "Not granted", color = if (p.granted) NdOk else NdMuted, fontSize = 13.sp)
+                }
+            }
+            TextButton(onClick = {
+                runCatching {
+                    context.startActivity(
+                        android.content.Intent(
+                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            android.net.Uri.parse("package:" + context.packageName)
+                        )
+                    )
+                }
+            }) { Text("Open system settings", color = NdNeon, fontSize = 12.sp) }
+            Text("Permissions are only ever granted through Android's own prompts or system settings - never silently. Status re-reads when you return to this screen.", color = NdMuted, fontSize = 11.sp)
         }
 
         Section("About MAX 2.0") {

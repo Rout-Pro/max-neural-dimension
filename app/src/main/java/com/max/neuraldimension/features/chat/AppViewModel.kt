@@ -157,6 +157,38 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Blueprint Part 19: user-controlled data deletion. Cancels pending
+     * reminder/briefing work, wipes every Room table, deletes chat attachment
+     * files, resets all settings to defaults (including the PIN), then records
+     * a single data_wiped event so the security history restarts with the
+     * wipe itself on record.
+     */
+    fun eraseAllData() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { wipeNow() }
+    }
+
+    /** The wipe itself, separated so tests can await it directly. */
+    internal suspend fun wipeNow() {
+        val app = getApplication<Application>()
+        runCatching {
+            val wm = androidx.work.WorkManager.getInstance(app)
+            wm.cancelAllWorkByTag("nd-reminder")
+            wm.cancelAllWorkByTag(com.max.neuraldimension.features.assistant.BriefingWorker.TAG)
+        }
+        db.clearAllTables()
+        app.filesDir.listFiles()
+            ?.filter { it.name.startsWith("att_") }
+            ?.forEach { it.delete() }
+        settingsRepo.update { MaxSettings() }
+        db.securityDao().insert(SecurityEvent(type = "data_wiped"))
+        currentConversationId.value = null
+        incognitoMessages.value = emptyList()
+        incognito.value = false
+        lockState.value = false
+        lockError.value = null
+    }
+
     init {
         voice.init()
         viewModelScope.launch {
