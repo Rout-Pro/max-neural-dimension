@@ -349,13 +349,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val history = if (incognito.value) {
                 incognitoMessages.value
                     .filter { !it.text.startsWith("SETUP_REQUIRED::") && !it.text.startsWith("ERROR::") }
-                    .takeLast(24)
                     .map { ChatTurn(it.role, it.text) }
+                    .let { com.max.neuraldimension.domain.ChatContext.window(it) }
             } else {
                 db.chatDao().messages(cid).first()
                     .filter { !it.text.startsWith("SETUP_REQUIRED::") && !it.text.startsWith("ERROR::") }
-                    .takeLast(24)
                     .map { ChatTurn(it.role, it.text) }
+                    .let { com.max.neuraldimension.domain.ChatContext.window(it) }
             }
             val aid: Long
             if (incognito.value) {

@@ -192,13 +192,43 @@ fun SettingsScreen(vm: AppViewModel) {
 
         Section("Memory") {
             var newMem by remember { mutableStateOf("") }
+            var editingMem by remember { mutableStateOf<String?>(null) }
             s.memories.forEach { m ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(m, color = NdSilver, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { editingMem = m }) { Text("Edit", color = NdNeon, fontSize = 11.sp) }
                     TextButton(onClick = {
                         scope.launch { vm.settingsRepo.update { it.copy(memories = it.memories - m) } }
                     }) { Text("Delete", color = NdMuted, fontSize = 11.sp) }
                 }
+            }
+            // Blueprint Part 13: memory editing - user-controlled, in place.
+            editingMem?.let { original ->
+                var edited by remember(original) { mutableStateOf(original) }
+                AlertDialog(
+                    onDismissRequest = { editingMem = null },
+                    title = { Text("Edit memory") },
+                    text = {
+                        BasicTextField(
+                            value = edited, onValueChange = { edited = it },
+                            textStyle = TextStyle(color = NdSilver, fontSize = 13.sp),
+                            cursorBrush = SolidColor(NdLavender),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val v = edited.trim()
+                            if (v.isNotBlank() && v != original) {
+                                scope.launch { vm.settingsRepo.update { it.copy(memories = it.memories - original + v) } }
+                            }
+                            editingMem = null
+                        }) { Text("Save", color = NdNeon) }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { editingMem = null }) { Text("Cancel") }
+                    }
+                )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 BasicTextField(
