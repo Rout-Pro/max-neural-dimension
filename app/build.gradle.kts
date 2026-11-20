@@ -73,6 +73,6 @@ dependencies {
     // JVM-rendered pixel evidence (test-only; never in the distributed APK).
     testImplementation(platform("androidx.compose:compose-bom:2024.12.01"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
-    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.78.0")
-    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.78.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.60.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.60.0")
 }
