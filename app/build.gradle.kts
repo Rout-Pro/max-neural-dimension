@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 4  // must exceed the delivered v2.0.1 (3) so upgrades install
-        versionName = "2.0"
+        versionName = "2.1.0"
         // CI-only UI-test hook. The distributed APK (Build workflow) is compiled
         // without -PND_TEST_HOOK, so the hook is absent from what users install.
         buildConfigField("boolean", "ND_TEST_HOOK", (project.findProperty("ND_TEST_HOOK") as String?) ?: "false")
