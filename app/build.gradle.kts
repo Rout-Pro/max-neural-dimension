@@ -24,6 +24,11 @@ android {
         compose = true
         buildConfig = true
     }
+
+    testOptions {
+        // Binary resource loading for Robolectric Compose screen tests (test-only).
+        unitTests.isIncludeAndroidResources = true
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -65,4 +70,9 @@ dependencies {
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core:1.6.1")
     testImplementation("androidx.work:work-testing:2.9.1")
+    // JVM-rendered pixel evidence (test-only; never in the distributed APK).
+    testImplementation(platform("androidx.compose:compose-bom:2024.12.01"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.79.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.79.0")
 }

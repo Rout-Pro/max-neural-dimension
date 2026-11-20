@@ -17,6 +17,20 @@ jobs:
           java-version: '17'
       - name: Run JVM unit tests
         run: bash gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+      - name: Upload JVM test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm-test-reports
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
+      - name: Upload JVM-rendered screen pixels
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm-screen-pixels
+          path: app/build/outputs/roborazzi/*.png
       - name: Assemble release APK
         run: bash gradlew :app:assembleRelease --no-daemon --stacktrace
       - name: Verify distributed APK stays HTTPS-only and test-hook-free
